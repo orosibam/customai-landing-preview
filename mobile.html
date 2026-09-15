@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=390,initial-scale=1">
+<title>남들이 잘 쓰는 AI 활용법이 나에게는 최악의 방법이라면? · 커스텀AI</title>
+<meta name="description" content="사람마다 강점도, 약점도 다릅니다. 나는 어떤 강점을 가진 사람인지, 그런 나에게 AI는 어떤 역할을 맡아야 하는지 무료로 확인해보세요." />
+<link rel="canonical" href="https://rootme.store/onsaju.html" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%235b4ae0'/%3E%3C/svg%3E" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="커스텀AI" />
+<meta property="og:title" content="남들이 잘 쓰는 AI 활용법이 나에게는 최악의 방법이라면?" />
+<meta property="og:description" content="사람마다 강점도, 약점도 다르기 때문입니다." />
+<meta property="og:url" content="https://rootme.store/onsaju.html" />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<style>
+/* =========================================================================
+   커스텀AI 랜딩
+   ★ 문구 정본 : rootme_v2/spec/LANDING-COPY-CEO.md  (172단위)
+     - 대표님이 끊어놓은 줄은 <br> 로 그대로 유지한다. 문장을 <p> 안에 뭉치지 않는다
+     - 대표님이 **굵게** 지정한 25곳만 <strong>. 그 밖에 새 강조를 만들지 않는다
+     - 정본에 없는 문장은 최소한만 둔다 (조직도 · 엔진 인용 · 가격 · FAQ · 법적 고지)
+   ★ 조직도 : rootme_v2/evidence/report-out/{A-idea-flood,B-perfectionist}-조직도.svg 그대로
+   ⚠ 검사 : node tools/landing-canon-check.mjs (rootme_v2) · node tools/landing-quote-check.mjs (여기)
+   ========================================================================= */
+:root{
+  --bg:#f7f5f2;
+  --band:#edf1f0;
+  --band-2:#f1eefb;
+  --card:#ffffff;
+  --ink:#15171c;
+  --ink-soft:#4c5058;
+  --ink-dim:#888d96;
+  --line:rgba(21,23,28,.10);
+  --line-2:rgba(21,23,28,.18);
+  --accent:#5b4ae0;
+  --accent-soft:#ece9fd;
+  --green:#16624f;
+  --green-soft:#e3efeb;
+  --coral:#e2613c;
+  --coral-soft:#fdeee8;
+  --dark:#15171c;
+  --readw:620px;
+  --maxw:1060px;
+  --r:20px;
+  --r-lg:26px;
+  --sh-s:0 1px 2px rgba(21,23,28,.04), 0 6px 20px rgba(21,23,28,.05);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%; scroll-behavior:smooth; scroll-padding-top:64px}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"Pretendard Variable",Pretendard,"Apple SD Gothic Neo",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:17px; line-height:1.72; letter-spacing:-.018em;
+  -webkit-font-smoothing:antialiased;
+  word-break:keep-all; overflow-wrap:break-word;
+  overflow-x:hidden;
+  padding-bottom:calc(72px + env(safe-area-inset-bottom));
+}
+img,svg{max-width:100%}
+a{color:inherit}
+
+/* ---------- 상단바 ---------- */
+.topbar{
+  position:sticky; top:0; z-index:120; background:rgba(247,245,242,.93);
+  backdrop-filter:saturate(160%) blur(12px); border-bottom:1px solid transparent;
+  transition:border-color .25s;
+}
+.topbar.stuck{border-bottom-color:var(--line)}
+.topbar .row{
+  max-width:var(--maxw); margin:0 auto; padding:9px clamp(14px,4vw,28px);
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+}
+.brand{display:flex; align-items:center; gap:8px; font-weight:800; font-size:16px; letter-spacing:-.03em; text-decoration:none; white-space:nowrap}
+.brand .dot{width:20px;height:20px;border-radius:6px;background:var(--accent);display:inline-block}
+.brand .muted{color:var(--ink-dim); font-weight:600; font-size:13.5px}
+.top-cta{
+  background:var(--ink); color:#fff; text-decoration:none; font-weight:700; font-size:13.5px;
+  padding:8px 15px; border-radius:999px; white-space:nowrap;
+}
+#progress{position:absolute; left:0; bottom:-1px; height:2px; width:0; background:var(--accent); transition:width .12s linear}
+
+/* ---------- 섹션 / 타이포 ---------- */
+section{padding:clamp(32px,4.4vh,64px) 20px; position:relative}
+section.band{background:var(--band)}
+section.band2{background:var(--band-2)}
+.read{max-width:var(--readw); margin:0 auto}
+.wide{max-width:var(--maxw); margin:0 auto}
+h1,h2{margin:0; font-weight:800; letter-spacing:-.04em; line-height:1.3}
+h1{font-size:clamp(27px,6.6vw,42px)}
+h2{font-size:clamp(24px,5.8vw,36px)}
+h2.sub,h1.sub{color:var(--accent)}
+h3{margin:0 0 10px; font-size:clamp(18px,4.2vw,22px); font-weight:800; letter-spacing:-.035em; line-height:1.4}
+.hgroup{margin:0 0 18px}
+.hgroup h1+h1, .hgroup h2+h2{margin-top:2px}
+p{margin:0 0 1em; max-width:34em}
+p:last-child{margin-bottom:0}
+strong{font-weight:800}
+.lead{font-size:clamp(16.5px,4.2vw,18.5px); color:var(--ink-soft)}
+.lead strong{color:var(--ink)}
+/* 정본에서 한 줄로 서 있는 짧은 문장 — 굵게 하지 않는다. 대표님이 굵게 찍은 자리만 굵다 */
+.mid{font-size:clamp(17.5px,4.6vw,21px); font-weight:600; letter-spacing:-.03em; line-height:1.5; color:var(--ink)}
+.dim{color:var(--ink-dim); font-size:14px; line-height:1.7}
+.sp{height:12px}
+
+/* ---------- 카드 ---------- */
+.card{
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+  padding:clamp(18px,4.6vw,26px); box-shadow:var(--sh-s);
+}
+.card + .card{margin-top:12px}
+.card p{font-size:16.5px}
+.cards{display:grid; gap:12px; margin-top:16px}
+
+/* 사람들이 실제로 하는 말 */
+.says{display:grid; gap:8px; margin:18px 0 0}
+.says li{
+  list-style:none; background:var(--card); border:1px solid var(--line); border-radius:13px;
+  padding:12px 16px; font-size:16px; color:var(--ink); line-height:1.55;
+}
+.says li strong{font-weight:800}
+.says.plain li{color:var(--ink-soft)}
+ul{padding:0; margin:0}
+
+/* 무료 결과 미리보기 — 엔진 실제 출력 인용 */
+.eng{display:grid; gap:10px; margin:14px 0 0}
+.eng li{
+  list-style:none; background:var(--card); border:1px solid var(--line); border-radius:13px;
+  padding:13px 15px; word-break:keep-all; overflow-wrap:anywhere;
+}
+.eng p{max-width:none}
+.eng .who{font-size:13.5px; color:var(--ink-dim); font-weight:600; line-height:1.55; margin:0 0 8px}
+.eng .scene{font-size:15.5px; color:var(--ink); line-height:1.66; margin:0}
+.eng .flip{
+  font-size:15px; color:var(--ink-soft); line-height:1.66;
+  margin:10px 0 0; padding-top:10px; border-top:1px dashed var(--line);
+}
+
+/* 번호 목록 */
+.numlist{display:grid; gap:8px; margin:18px 0}
+.numlist li{
+  list-style:none; display:flex; gap:12px; align-items:flex-start;
+  background:var(--card); border:1px solid var(--line); border-radius:13px; padding:13px 16px;
+}
+.numlist .n{
+  flex:0 0 24px; height:24px; border-radius:7px; background:var(--accent); color:#fff;
+  font-size:13.5px; font-weight:800; display:flex; align-items:center; justify-content:center; margin-top:2px;
+}
+.numlist .t{font-size:16.5px; line-height:1.55}
+
+/* ---------- 조직도 ---------- */
+.orgwrap{display:block; margin:18px auto 0; max-width:444px}
+.orgcard{background:var(--card); border:1px solid var(--line); border-radius:var(--r-lg); padding:clamp(14px,3.4vw,24px); box-shadow:var(--sh-s)}
+.orgcard.small{background:#fbfaf8}
+.orgcard .exhead{
+  display:flex; flex-wrap:wrap; align-items:center; gap:8px;
+  margin:0 0 11px; padding-bottom:10px; border-bottom:1px dashed var(--line-2);
+}
+.orgcard .exbadge{
+  flex:none; font-size:11.5px; font-weight:800; letter-spacing:.02em; line-height:1.5;
+  padding:3px 10px; border-radius:999px;
+  border:1px dashed var(--ink-dim); color:var(--ink-dim); background:transparent;
+}
+.orgcard .exhint{font-size:12.5px; font-weight:600; color:var(--ink-dim); line-height:1.5}
+.orgcard .tag{display:inline-block; font-size:12.5px; font-weight:800; letter-spacing:.02em; padding:5px 11px; border-radius:999px; margin-bottom:10px}
+.orgcard .tag.a{background:var(--coral-soft); color:var(--coral)}
+.orgcard .tag.b{background:var(--green-soft); color:var(--green)}
+.orgcard h3{font-size:clamp(17px,4.2vw,20px); margin-bottom:6px}
+.orgcard p{font-size:15.5px; color:var(--ink-soft); margin-bottom:0}
+.orgsvg{display:block; width:100%; height:auto; max-width:396px; margin:14px auto 0}
+@media(max-width:700px){
+  #ch4{padding-left:10px; padding-right:10px}
+  #ch4 .read{padding:0 10px}
+  .orgcard{padding-left:12px; padding-right:12px}
+  .orgsvg{max-width:none; width:calc(100% + 12px); margin-left:-6px; margin-right:-6px}
+}
+.orgnote{
+  margin-top:18px; text-align:center; font-size:clamp(17px,4.4vw,20px);
+  font-weight:800; letter-spacing:-.035em; color:var(--ink);
+}
+.orgnote span{background:linear-gradient(180deg,transparent 60%,rgba(91,74,224,.20) 60%)}
+.orgonly{
+  margin:12px auto 0; max-width:34em;
+  border:1.5px dashed var(--line-2); border-radius:var(--r);
+  background:rgba(255,255,255,.62);
+  padding:clamp(13px,3.2vw,18px) clamp(14px,3.6vw,22px);
+  text-align:center;
+}
+.orgonly .line1{
+  display:block; margin:0; font-size:clamp(15.5px,3.9vw,17px); line-height:1.6;
+  font-weight:800; letter-spacing:-.03em; color:var(--ink);
+}
+.orgonly .line2{
+  display:block; margin:6px 0 0; font-size:clamp(13.5px,3.4vw,14.5px); line-height:1.65;
+  font-weight:500; color:var(--ink-soft);
+}
+
+/* ---------- 가격 ---------- */
+.ladder{display:grid; gap:10px; margin:20px 0 0}
+.tier{
+  background:var(--card); border:1px solid var(--line); border-radius:16px; padding:15px 18px;
+  display:flex; gap:14px; align-items:flex-start;
+}
+.tier.free{border-color:rgba(22,98,79,.3); background:linear-gradient(180deg,var(--green-soft),#fff 55%)}
+.tier .amt{flex:0 0 86px; font-size:15.5px; font-weight:800; letter-spacing:-.03em; line-height:1.4; padding-top:1px}
+.tier.free .amt{color:var(--green)}
+.tier .what{font-size:16px; line-height:1.55; font-weight:600}
+.tier .what small{display:block; font-weight:500; font-size:14px; color:var(--ink-dim); margin-top:3px; line-height:1.55}
+@media(max-width:430px){
+  .tier{flex-direction:column; gap:4px}
+  .tier .amt{flex:none}
+}
+
+/* ---------- CTA ---------- */
+.ctabox{margin:20px 0 0}
+.cta{
+  display:flex; align-items:center; justify-content:center; gap:9px;
+  background:var(--accent); color:#fff; text-decoration:none;
+  font-weight:800; font-size:clamp(16px,4.2vw,18px); letter-spacing:-.03em; line-height:1.4;
+  padding:17px 24px; border-radius:999px; text-align:center;
+  box-shadow:0 8px 24px rgba(91,74,224,.28);
+  transition:transform .2s ease, box-shadow .2s ease;
+}
+.cta:hover{transform:translateY(-2px); box-shadow:0 12px 30px rgba(91,74,224,.34)}
+.cta .arw{font-weight:600}
+.cta-sub{margin:11px 0 0; font-size:14px; color:var(--ink-dim); text-align:center; max-width:none}
+.center{text-align:center}
+.center p{margin-left:auto; margin-right:auto}
+
+/* 마지막 다크 패널 */
+.finale{background:var(--dark); color:#fff; border-radius:var(--r-lg); padding:clamp(28px,6.5vw,52px) clamp(20px,5vw,40px); text-align:center}
+.finale h2{color:#fff}
+.finale h2.sub{color:#a99bfb}
+.finale p{color:#c9ccd4; max-width:30em; margin-left:auto; margin-right:auto}
+.finale .mid{color:#fff}
+.finale strong{color:#fff}
+.finale .cta{background:#fff; color:var(--ink); box-shadow:none}
+.finale .cta:hover{box-shadow:0 12px 30px rgba(0,0,0,.3)}
+.finale .cta-sub{color:#8d919c}
+
+/* ---------- FAQ ---------- */
+.faq{max-width:var(--readw); margin:0 auto; border-top:1px solid var(--line)}
+.faq details{border-bottom:1px solid var(--line); padding:13px 0}
+.faq summary{cursor:pointer; font-weight:700; font-size:16px; list-style:none; position:relative; padding-right:26px; letter-spacing:-.03em}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+"; position:absolute; right:2px; top:-2px; font-size:21px; font-weight:400; color:var(--ink-dim)}
+.faq details[open] summary::after{content:"−"}
+.faq p{margin:10px 0 0; font-size:15.5px; line-height:1.75; color:var(--ink-soft)}
+
+/* ---------- 하단 고정 CTA — 한 줄로 줄였다 ---------- */
+.stickybar{
+  position:fixed; left:0; right:0; bottom:0; z-index:200;
+  background:rgba(247,245,242,.95); backdrop-filter:saturate(160%) blur(12px);
+  border-top:1px solid var(--line);
+  padding:8px 14px calc(8px + env(safe-area-inset-bottom));
+  transform:translateY(120%); transition:transform .3s ease;
+}
+.stickybar.show{transform:none}
+.stickybar a{
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  background:var(--accent); color:#fff; text-decoration:none; font-weight:800; font-size:15.5px;
+  letter-spacing:-.03em; padding:13px 16px; border-radius:999px; line-height:1.3; text-align:center;
+}
+@media(min-width:940px){
+  .stickybar{display:none}
+  body{padding-bottom:0}
+}
+
+/* ---------- footer ---------- */
+footer{max-width:var(--maxw); margin:0 auto; padding:30px 20px 36px; border-top:1px solid var(--line)}
+footer p{font-size:13.5px; line-height:1.85; color:var(--ink-dim); max-width:46em}
+</style>
+<style>html{max-width:390px;margin:0 auto;overflow-x:hidden}</style></head>
+<body>
+
+<header class="topbar" id="topbar">
+  <div class="row">
+    <a class="brand" href="/"><span class="dot"></span> 커스텀AI <span class="muted">· Root Me</span></a>
+    <a class="top-cta" href="/diagnose.html?p=onsaju" data-cta="top">무료로 확인하기</a>
+  </div>
+  <div id="progress"></div>
+</header>
+
+<main>
+
+<!-- ══════════ 1. 정본 9-30행 ══════════ -->
+<section id="ch1">
+  <div class="read">
+    <div class="hgroup">
+      <h1>남들이 잘 쓰는 AI 활용법이</h1>
+      <h1 class="sub">나에게는 최악의 방법이라면?</h1>
+    </div>
+    <p class="lead">요즘은 누구나 AI를 씁니다.</p>
+    <p class="lead">아이디어를 얻고,<br />자료를 조사하고,<br />계획을 세우고,<br />더 좋은 방법을 물어봅니다.</p>
+    <p class="mid">그런데 이상하지 않나요?</p>
+    <p class="lead">AI를 쓰는데도</p>
+    <p class="lead"><strong>일이 줄어들기는커녕<br />오히려 생각할 것과 할 일이 더 많아지는 사람도 있습니다.</strong></p>
+    <p class="mid">이유는 간단합니다.</p>
+    <div class="ctabox">
+      <a class="cta" href="/diagnose.html?p=onsaju" data-cta="free-hero">나에게 맞는 AI 활용 방향 무료로 확인하기 <span class="arw">→</span></a>
+      <p class="cta-sub">결제 없이 결과까지</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 2. 정본 31-42행 ══════════ -->
+<section class="band">
+  <div class="read">
+    <div class="hgroup">
+      <h2>사람마다</h2>
+      <h2 class="sub">강점도, 약점도 다르기 때문입니다</h2>
+    </div>
+    <p class="lead">누군가에게 최고의 AI 사용법이<br />당신에게도 최고의 방법이라는 보장은 없습니다.</p>
+    <p class="lead">오히려</p>
+    <p class="lead"><strong>내 성향을 모르고 남들이 쓰는 방식을 그대로 따라 하면<br />AI가 내 약점을 보완하는 게 아니라<br />그 약점을 더 강하게 만들 수도 있습니다.</strong></p>
+  </div>
+</section>
+
+<!-- ══════════ 3. 정본 46-118행 ══════════ -->
+<section>
+  <div class="read">
+    <div class="hgroup"><h2>예를 들어</h2></div>
+
+    <div class="card">
+      <h3>아이디어가 원래 많은 사람에게</h3>
+      <p>AI가 계속<br />“다른 아이디어도 더 드릴까요?”<br />“이것도 해볼 수 있습니다.”<br />라고 하면 어떻게 될까요?</p>
+      <p>일을 줄여주는 게 아니라</p>
+      <p><strong>새로운 생각과 할 일을 계속 추가합니다.</strong></p>
+      <p>원래도 A를 하다가 B, C로 넘어가던 사람이<br />AI 때문에 더 많은 길을 보게 됩니다.</p>
+    </div>
+
+    <div class="card">
+      <h3>완벽하게 하려다 시작을 못 하는 사람에게</h3>
+      <p>AI가 계속<br />“이 위험도 고려해야 합니다.”<br />“이 경우도 확인해야 합니다.”<br />“추가 조사가 필요합니다.”<br />라고 하면요?</p>
+      <p>원래도<br />“조금만 더 알아보고 시작해야지.”<br />하던 사람에게<br />AI가 검토해야 할 것만<br />계속 추가해주는 겁니다.</p>
+      <p>결국</p>
+      <p><strong>AI를 쓰기 전보다 더 많이 조사했는데<br />정작 시작은 더 늦어질 수도 있습니다.</strong></p>
+    </div>
+
+    <div class="card">
+      <h3>한번 맞다고 생각하면<br />그 생각을 오래 밀고 가는 사람에게는요?</h3>
+      <p>AI에게<br />“내 생각 맞지?”<br />라고 물었는데</p>
+      <p>AI가<br />“맞습니다. 좋은 접근입니다.”<br />하면서<br />내 생각을 뒷받침하는 근거만 계속 만들어준다면</p>
+      <p>AI는 새로운 관점을 주는 게 아니라</p>
+      <p><strong>내가 원래 믿던 생각을 더 강하게 만들어주는 도구</strong><br />가 될 수도 있습니다.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 4. 정본 122-133행 ══════════ -->
+<section class="band2">
+  <div class="read">
+    <div class="hgroup">
+      <h2>그러니까 중요한 건</h2>
+      <h2 class="sub">AI를 많이 쓰는 게 아닙니다</h2>
+    </div>
+    <p class="mid">먼저 알아야 합니다.</p>
+    <ul class="says">
+      <li><strong>나는 어떤 강점을 가진 사람인지.</strong></li>
+      <li><strong>나는 반복해서 어디에서 막히는지.</strong></li>
+    </ul>
+    <p class="lead" style="margin:16px 0 0">그리고</p>
+    <ul class="says" style="margin-top:8px">
+      <li><strong>그런 나에게 AI는 어떤 역할을 맡아야 하는지.</strong></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ══════════ 5. 정본 137-214행 ══════════ -->
+<section id="ch2">
+  <div class="read">
+    <div class="hgroup"><h2>그런데 여기서 한 가지 더 중요한 게 있습니다</h2></div>
+    <p class="lead">우리는 보통 자신의 약점을<br />있는 그대로 약점이라고 생각합니다.</p>
+    <ul class="says plain">
+      <li>“나는 끈기가 없어.”</li>
+      <li>“나는 실행력이 부족해.”</li>
+      <li>“나는 고집이 세.”</li>
+    </ul>
+    <div class="sp"></div>
+    <p class="lead">그런데 실제로는</p>
+    <p class="lead"><strong>내가 약점이라고 생각했던 행동이<br />강점이 너무 강하게 작동하면서 생긴 결과일 수도 있습니다.</strong></p>
+
+    <div class="cards">
+      <div class="card">
+        <h3>“나는 이것저것 벌여놓고 끝까지 못 해요.”</h3>
+        <p>정말 끈기가 부족한 걸까요?</p>
+        <p>어쩌면</p>
+        <p><strong>새로운 가능성을 빠르게 발견하는 창의력과<br />바로 행동하는 실행력이 둘 다 강해서</strong></p>
+        <p>A를 하다가 B를 발견하고,<br />B를 바로 실행하다 C까지 넘어가면서<br />원래 하던 A가 사라졌던 것일 수도 있습니다.</p>
+      </div>
+      <div class="card">
+        <h3>“나는 생각만 하다가 결국 시작을 못 해요.”</h3>
+        <p>정말 실행력이 부족한 걸까요?</p>
+        <p>어쩌면</p>
+        <p><strong>문제가 될 부분을 빠르게 발견하는 능력과<br />높은 완성도 기준</strong><br />이 강해서<br />실행하기 전에 모든 위험을 없애려고 했던 것일 수도 있습니다.</p>
+        <p>이 힘이 잘 쓰이면<br />신중함과 전략적 판단이 되지만,<br />너무 빨리 작동하면</p>
+        <p><strong>과잉검토 → 결정 지연 → 시작 지연</strong><br />이 됩니다.</p>
+      </div>
+      <div class="card">
+        <h3>“나는 한번 맞다고 생각하면 너무 고집을 부려요.”</h3>
+        <p>정말 단순히 유연성이 부족한 걸까요?</p>
+        <p>어쩌면</p>
+        <p><strong>한번 세운 기준을 쉽게 버리지 않고<br />한 방향을 깊게 밀고 갈 수 있는 힘</strong><br />이 강한 사람일 수 있습니다.</p>
+        <p>방향이 맞을 때는 엄청난 추진력이지만</p>
+        <p>방향을 다시 봐야 할 순간에도<br />그 힘이 계속 작동하면</p>
+        <p>고집처럼 보일 수 있습니다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 6. 정본 218-236행 ══════════ -->
+<section class="band">
+  <div class="read">
+    <div class="hgroup">
+      <h2>우리가 찾는 건</h2>
+      <h2 class="sub">‘당신의 단점 목록’이 아닙니다</h2>
+    </div>
+    <p class="lead">당신이 반복해서 겪는 문제를 보고</p>
+    <ul class="numlist">
+      <li><span class="n">1</span><span class="t">당신에게 가장 강하게 나타나는 능력</span></li>
+      <li><span class="n">2</span><span class="t">당신이 약점이라고 생각했던 행동</span></li>
+      <li><span class="n">3</span><span class="t">그 약점이 어떤 강점에서 시작됐는지</span></li>
+      <li><span class="n">4</span><span class="t">그래서 절대로 없애면 안 되는 능력이 무엇인지</span></li>
+    </ul>
+    <p class="lead">를 함께 봅니다.</p>
+    <p class="lead">핵심은</p>
+    <p class="lead"><strong>약점을 없애는 것이 아니라<br />강점이 약점으로 바뀌는 순간을 찾는 것</strong>입니다.</p>
+  </div>
+</section>
+
+<!-- ══════════ 7. 정본 240-277행 ══════════ -->
+<section id="ch3">
+  <div class="read">
+    <div class="hgroup">
+      <h2>그리고 그 결과를</h2>
+      <h2 class="sub">AI 활용법까지 연결합니다</h2>
+    </div>
+    <p class="lead">당신이 어떤 사람인지 알게 됐다면</p>
+    <p class="lead">그다음 질문은 자연스럽습니다.</p>
+    <h3 style="margin:20px 0 0">“그럼 나는 AI를 어떻게 써야 하지?”</h3>
+
+    <div class="card" style="margin-top:16px">
+      <p>아이디어가 너무 많은 사람이라면<br />AI에게 새로운 생각을 더 받기보다</p>
+      <p><strong>생각을 대신 받아두고 처리하게 하는 방식</strong><br />이 더 잘 맞을 수 있습니다.</p>
+    </div>
+    <div class="card">
+      <p>완벽주의가 강한 사람이라면<br />더 조사하게 하는 것보다</p>
+      <p><strong>AI가 먼저 첫 결과물을 만들고<br />검토에 종료선을 만들어주는 방식</strong><br />이 더 잘 맞을 수 있습니다.</p>
+    </div>
+    <div class="card">
+      <p>한 가지 생각에 오래 고착되는 사람이라면<br />내 생각을 강화하는 AI보다</p>
+      <p><strong>대안과 반대 근거를 확인한 뒤<br />그래도 맞으면 강하게 밀어주는 AI</strong><br />가 더 필요할 수 있습니다.</p>
+    </div>
+
+    <div class="sp"></div>
+    <p class="lead">같은 ChatGPT를 써도</p>
+    <p class="lead"><strong>사람에 따라 사용법은 완전히 달라져야 합니다.</strong></p>
+  </div>
+</section>
+
+<!-- ══════════ 8. 조직도 한 장 — 정본에 없다. 대표 지시(2026-09-12)로 남긴다 ══════════
+     그림 원본 : rootme_v2/evidence/report-out/YT-youtube-team-조직도.svg
+     생성기    : rootme_v2/tools/gen-youtube-org-svg.mjs
+                 → 엔진과 **같은** lib/org-chart-svg.js 로 뽑는다. 랜딩 그림 = 결제 후 받는 그림
+     사람 출처 : rootme_v2/office/유튜브팀/CLAUDE.md 의 14명 전원. 지어내지 않았다
+     ⚠ 두 장 → 한 장. 「사람마다 다르다」는 그림이 아니라 아래 한 문장이 말한다
+     ⚠ 그림보다 사람 소개가 먼저 온다. 누구 얘긴지 알고 그림을 보게 한다
+     ⚠ 이 사람은 게으른 사람이 아니다. 카메라 앞에 서는 일은 본인이 계속 한다 -->
+<section class="band2" id="ch4">
+  <div class="wide">
+    <div class="read" style="margin-bottom:2px">
+      <div class="hgroup">
+        <h2>예를 들면</h2>
+        <h2 class="sub">이런 회사가 나옵니다</h2>
+      </div>
+      <p class="lead">카메라 앞에서 말하는 건 잘합니다.<br />그래서 유튜브를 하고 싶습니다.</p>
+      <p class="lead">그런데 매주 대본 쓰고,<br />매주 편집해서 업로드하는<br />반복 업무에는 약합니다.</p>
+      <p class="mid"><strong>그 사람에게<br />실제 리포트가 만들어 준 AI 회사입니다.</strong></p>
+    </div>
+
+    <div class="orgwrap">
+      <div class="orgcard">
+        <svg class="oc orgsvg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 396 891" width="100%" role="img" aria-label="카메라 앞은 잘하는데 매주 대본·편집이 버거운 사람 — 나만의 AI 회사 조직도"><title>카메라 앞은 잘하는데 매주 대본·편집이 버거운 사람 — 나만의 AI 회사 조직도</title><style>
+.oc{--ink:#15181e;--sub:#5c6472;--line:#a2a9b5;--bg:#ffffff;--card:#fbfcfd;--card2:#f2f4f7;--accent:#2f3a56;--tcOn:#ffffff}
+.oc .t0{--tc:#2f5fa8}.oc .t1{--tc:#1f7a5e}.oc .t2{--tc:#a05a10}.oc .t3{--tc:#7b3f96}.oc .t4{--tc:#b03a45}.oc .t5{--tc:#17657f}.oc .t6{--tc:#5f6a12}.oc .t7{--tc:#96552e}
+@media (prefers-color-scheme:dark){.oc{--ink:#eceef2;--sub:#a6adba;--line:#727a88;--bg:#14161a;--card:#1c1f25;--card2:#24282f;--accent:#cbd3e3;--tcOn:#14161a}
+.oc .t0{--tc:#9bbdf0}.oc .t1{--tc:#79ccae}.oc .t2{--tc:#e0a95c}.oc .t3{--tc:#c8a2dc}.oc .t4{--tc:#ef9aa2}.oc .t5{--tc:#8bc9de}.oc .t6{--tc:#c0cb72}.oc .t7{--tc:#e0ab86}}
+.oc text:not([fill]){fill:var(--ink)}
+.oc text{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Pretendard','Noto Sans KR',sans-serif}
+.oc .sub{fill:var(--sub)}
+.oc .ln{stroke:var(--line);fill:none}
+.oc .deskTop{fill:var(--card2);stroke:var(--tc);stroke-width:1.1}
+.oc .deskEdge{fill:var(--tc);opacity:0.45}
+.oc .deskLeg{fill:var(--tc);opacity:0.55}
+.oc .deskShadow{fill:var(--tc);opacity:0.12}
+.oc .headBand{fill:var(--tc);opacity:0.10}
+</style><rect x="0" y="0" width="396" height="891" fill="var(--bg)"/><rect x="78" y="14" width="240" height="54" rx="12" fill="var(--card)" stroke="var(--accent)" stroke-width="2"/><rect x="82" y="18" width="232" height="46" rx="9" fill="none" stroke="var(--accent)" stroke-width="0.9"/><g transform="translate(98 26) scale(1.6)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--accent)" stroke-width="1.6"/><path d="M8.2 2.9 C8.4 1.1 10.2 0.9 10.6 2.2" fill="none" stroke="var(--ink)" stroke-width="1.4" stroke-linecap="round"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="138" y="40" font-size="16" font-weight="700">당신</text><text x="138" y="56" font-size="10.5" class="sub">Owner · 최종 결정</text><path class="ln" d="M198 68 V110" stroke-width="1.6"/><circle cx="198" cy="80" r="2.6" fill="var(--line)"/><text x="208" y="88" font-size="10.5" class="sub">대화는 여기 하나뿐입니다</text><rect x="78" y="110" width="240" height="58" rx="12" fill="var(--card2)" stroke="var(--accent)" stroke-width="2.6"/><g transform="translate(98 123) scale(1.7)"><path d="M8 3.2 V1.8" stroke="var(--accent)" stroke-width="1.1" fill="none" stroke-linecap="round"/><circle cx="8" cy="1" r="1.5" fill="var(--bg)" stroke="var(--accent)" stroke-width="1.1"/><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--accent)" stroke="var(--accent)" stroke-width="1.2" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="2.4" fill="var(--accent)" stroke="var(--accent)" stroke-width="1.2"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--bg)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--bg)"/></g><text x="140" y="137" font-size="16" font-weight="700">대표 AI</text><text x="140" y="154" font-size="10.5" class="sub">팀 4개 · 직원 14명</text><path class="ln" d="M198 168 V216 H24 V742.5" stroke-width="1.6"/><circle cx="198" cy="182" r="2.6" fill="var(--line)"/><text x="208" y="190" font-size="10.5" class="sub">필요한 팀과 직원을 골라</text><text x="208" y="203" font-size="10.5" class="sub">업무를 배정합니다</text><g class="t0"><path class="ln" d="M24 250.5 H42" stroke-width="1.4"/><rect x="42" y="230" width="340" height="129" rx="12" fill="var(--card)" stroke="var(--tc)" stroke-width="1.3"/><path class="headBand" d="M42 242 a12 12 0 0 1 12 -12 h316 a12 12 0 0 1 12 12 V286 H42 Z"/><rect x="54" y="240" width="21" height="21" rx="7" fill="var(--tc)"/><text x="64.5" y="255" text-anchor="middle" font-size="12" font-weight="700" fill="var(--tcOn)">1</text><text x="82" y="255" font-size="14" font-weight="700">이번 주에 뭘 찍을지 정하는 팀</text><text x="370" y="255" text-anchor="end" font-size="10.5" class="sub">직원 2명</text><text x="54" y="274" font-size="10.5" class="sub">뭐가 터졌고 뭘 검색하는지 보고 주제를 정하는 팀</text><rect class="deskTop" x="50" y="292" width="324" height="43" rx="7"/><path class="deskEdge" d="M47 332 H377 V339 a3 3 0 0 1 -3 3 H50 a3 3 0 0 1 -3 -3 Z"/><rect class="deskLeg" x="56" y="341" width="10" height="9" rx="2"/><rect class="deskLeg" x="358" y="341" width="10" height="9" rx="2"/><rect class="deskShadow" x="52" y="350" width="320" height="2.5" rx="1.25"/><g transform="translate(54 298) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><path d="M3.1 6.3 V6.4 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 12.9 6.4 V6.3 C11.4 5.2 4.6 5.2 3.1 6.3 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="73" y="310" font-size="10.5">요즘 터진 영상 찾는 직원</text><g transform="translate(212 298) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><path d="M3.1 6.6 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 12.9 6.4 L11.4 5.0 L6.2 6.6 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="231" y="310" font-size="10.5">사람들이 뭘 검색하는지</text><text x="231" y="322.5" font-size="10.5">보는 직원</text></g><g class="t1"><path class="ln" d="M24 391.5 H42" stroke-width="1.4"/><rect x="42" y="371" width="340" height="181" rx="12" fill="var(--card)" stroke="var(--tc)" stroke-width="1.3"/><path class="headBand" d="M42 383 a12 12 0 0 1 12 -12 h316 a12 12 0 0 1 12 12 V427 H42 Z"/><rect x="54" y="381" width="21" height="21" rx="7" fill="var(--tc)"/><text x="64.5" y="396" text-anchor="middle" font-size="12" font-weight="700" fill="var(--tcOn)">2</text><text x="82" y="396" font-size="14" font-weight="700">제목부터 대본까지 쓰는 팀</text><text x="370" y="396" text-anchor="end" font-size="10.5" class="sub">직원 6명</text><text x="54" y="415" font-size="10.5" class="sub">터진 제목과 구조에 반응 난 말을 붙여 대본을 쓰는 팀</text><rect class="deskTop" x="50" y="433" width="324" height="95" rx="7"/><path class="deskEdge" d="M47 525 H377 V532 a3 3 0 0 1 -3 3 H50 a3 3 0 0 1 -3 -3 Z"/><rect class="deskLeg" x="56" y="534" width="10" height="9" rx="2"/><rect class="deskLeg" x="358" y="534" width="10" height="9" rx="2"/><rect class="deskShadow" x="52" y="543" width="320" height="2.5" rx="1.25"/><g transform="translate(54 439) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><path d="M3.1 6.3 V6.4 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 12.9 6.4 V6.3 C11.4 5.2 4.6 5.2 3.1 6.3 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="73" y="451" font-size="10.5">제목·썸네일 만드는 직원</text><g transform="translate(212 439) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><path d="M3.1 6.6 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 12.9 6.4 L11.4 5.0 L6.2 6.6 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="231" y="451" font-size="10.5">터진 영상 구조 찾는 직원</text><g transform="translate(54 465) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><circle cx="11.9" cy="2.9" r="1.7" fill="var(--ink)"/><path d="M3.1 6.2 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 11.6 3.6 C8.4 4.0 4.6 4.9 3.1 6.2 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="73" y="477" font-size="10.5">반응 많은 댓글 모으는 직원</text><g transform="translate(212 465) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><path d="M3.1 6.3 V6.4 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 12.9 6.4 V6.3 C11.4 5.2 4.6 5.2 3.1 6.3 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="231" y="477" font-size="10.5">터진 쇼츠에서 재료 찾는</text><text x="231" y="489.5" font-size="10.5">직원</text><g transform="translate(54 500) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><path d="M3.1 6.6 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 12.9 6.4 L11.4 5.0 L6.2 6.6 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="73" y="512" font-size="10.5">많이 본 구간 뽑는 직원</text><g transform="translate(212 500) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><circle cx="11.9" cy="2.9" r="1.7" fill="var(--ink)"/><path d="M3.1 6.2 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 11.6 3.6 C8.4 4.0 4.6 4.9 3.1 6.2 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="231" y="512" font-size="10.5">대본 쓰는 직원</text></g><g class="t2"><path class="ln" d="M24 584.5 H42" stroke-width="1.4"/><rect x="42" y="564" width="340" height="146" rx="12" fill="var(--card)" stroke="var(--tc)" stroke-width="1.3"/><path class="headBand" d="M42 576 a12 12 0 0 1 12 -12 h316 a12 12 0 0 1 12 12 V620 H42 Z"/><rect x="54" y="574" width="21" height="21" rx="7" fill="var(--tc)"/><text x="64.5" y="589" text-anchor="middle" font-size="12" font-weight="700" fill="var(--tcOn)">3</text><text x="82" y="589" font-size="14" font-weight="700">편집해서 영상 만드는 팀</text><text x="370" y="589" text-anchor="end" font-size="10.5" class="sub">직원 3명</text><text x="54" y="608" font-size="10.5" class="sub">화면에 쓸 자료까지 만들어 영상을 뽑아 놓는 팀</text><rect class="deskTop" x="50" y="626" width="324" height="60" rx="7"/><path class="deskEdge" d="M47 683 H377 V690 a3 3 0 0 1 -3 3 H50 a3 3 0 0 1 -3 -3 Z"/><rect class="deskLeg" x="56" y="692" width="10" height="9" rx="2"/><rect class="deskLeg" x="358" y="692" width="10" height="9" rx="2"/><rect class="deskShadow" x="52" y="701" width="320" height="2.5" rx="1.25"/><g transform="translate(54 632) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><path d="M3.1 6.3 V6.4 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 12.9 6.4 V6.3 C11.4 5.2 4.6 5.2 3.1 6.3 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="73" y="644" font-size="10.5">화면에 쓸 자료 만드는 직원</text><g transform="translate(212 632) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><path d="M3.1 6.6 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 12.9 6.4 L11.4 5.0 L6.2 6.6 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="231" y="644" font-size="10.5">편집 참고 영상 찾는 직원</text><g transform="translate(54 658) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><circle cx="11.9" cy="2.9" r="1.7" fill="var(--ink)"/><path d="M3.1 6.2 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 11.6 3.6 C8.4 4.0 4.6 4.9 3.1 6.2 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="73" y="670" font-size="10.5">영상 편집하는 직원</text></g><g class="t3"><path class="ln" d="M24 742.5 H42" stroke-width="1.4"/><rect x="42" y="722" width="340" height="155" rx="12" fill="var(--card)" stroke="var(--tc)" stroke-width="1.3"/><path class="headBand" d="M42 734 a12 12 0 0 1 12 -12 h316 a12 12 0 0 1 12 12 V778 H42 Z"/><rect x="54" y="732" width="21" height="21" rx="7" fill="var(--tc)"/><text x="64.5" y="747" text-anchor="middle" font-size="12" font-weight="700" fill="var(--tcOn)">4</text><text x="82" y="747" font-size="14" font-weight="700">올리고 결과 보는 팀</text><text x="370" y="747" text-anchor="end" font-size="10.5" class="sub">직원 3명</text><text x="54" y="766" font-size="10.5" class="sub">예약 걸어 올리고 어디서 반응이 났는지 알려주는 팀</text><rect class="deskTop" x="50" y="784" width="324" height="69" rx="7"/><path class="deskEdge" d="M47 850 H377 V857 a3 3 0 0 1 -3 3 H50 a3 3 0 0 1 -3 -3 Z"/><rect class="deskLeg" x="56" y="859" width="10" height="9" rx="2"/><rect class="deskLeg" x="358" y="859" width="10" height="9" rx="2"/><rect class="deskShadow" x="52" y="868" width="320" height="2.5" rx="1.25"/><g transform="translate(54 790) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><path d="M3.1 6.3 V6.4 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 12.9 6.4 V6.3 C11.4 5.2 4.6 5.2 3.1 6.3 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="73" y="802" font-size="10.5">해시태그 짜는 직원</text><g transform="translate(212 790) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><path d="M3.1 6.6 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 12.9 6.4 L11.4 5.0 L6.2 6.6 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="231" y="802" font-size="10.5">예약 걸어 올리는 직원</text><g transform="translate(54 816) scale(1)"><path d="M1.7 19 V15.2 C1.7 11.5 4.5 9.7 8 9.7 C11.5 9.7 14.3 11.5 14.3 15.2 V19 Z" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15" stroke-linejoin="round"/><rect x="3" y="2.8" width="10" height="9.3" rx="3.6" fill="var(--card)" stroke="var(--tc, var(--line))" stroke-width="1.15"/><circle cx="11.9" cy="2.9" r="1.7" fill="var(--ink)"/><path d="M3.1 6.2 A3.6 3.6 0 0 1 6.7 2.8 H9.3 A3.6 3.6 0 0 1 11.6 3.6 C8.4 4.0 4.6 4.9 3.1 6.2 Z" fill="var(--ink)"/><circle cx="6.2" cy="8.2" r="0.85" fill="var(--ink)"/><circle cx="9.8" cy="8.2" r="0.85" fill="var(--ink)"/></g><text x="73" y="828" font-size="10.5">어디서 반응 났는지 보는</text><text x="73" y="840.5" font-size="10.5">직원</text></g></svg>
+      </div>
+    </div>
+
+    <p class="orgonly">
+      <span class="line1">이건 하나의 예시일 뿐입니다. 사람마다 완전히 다른 회사가 나옵니다.</span>
+      <span class="line2">팀 이름도, 직원 수도, 무엇을 넘기고 무엇을 직접 할지도 당신이 답한 것으로 다시 짜입니다.</span>
+    </p>
+  </div>
+</section>
+
+<!-- ══════════ 9. 정본 281-306행 ══════════ -->
+<section>
+  <div class="read">
+    <div class="hgroup">
+      <h2>그래서 질문도</h2>
+      <h2 class="sub">모두에게 똑같지 않습니다</h2>
+    </div>
+    <p class="lead">약 20~30개의 질문을 하지만</p>
+    <p class="lead">모든 사람에게<br />같은 질문을 던지지 않습니다.</p>
+    <p class="lead">앞에서 어떤 답을 했는지에 따라</p>
+    <p class="mid">뒤의 질문이 달라집니다.</p>
+    <p class="lead">당신이</p>
+    <p class="lead">어디에서 자주 막히는지,</p>
+    <p class="lead">어떤 상황에서 같은 행동을 반복하는지,</p>
+    <p class="lead">무엇을 잘하지만<br />그 능력이 언제 문제로 바뀌는지를</p>
+    <p class="lead">점점 더 좁혀갑니다.</p>
+    <p class="lead">여기에 생년월일시를 바탕으로 한 사주 정보도</p>
+    <p class="lead">행동응답과는 별개의 정보로 함께 봅니다.</p>
+  </div>
+</section>
+
+<!-- ══════════ 10. 정본 310-326행 + 엔진 실제 출력 인용 ══════════ -->
+<section class="band" id="ch5">
+  <div class="read">
+    <div class="hgroup"><h2>무료 결과에서 확인할 수 있습니다</h2></div>
+    <ul class="says">
+      <li><strong>내가 가장 강하게 가지고 있는 능력</strong></li>
+      <li><strong>내가 약점이라고 생각해왔던 행동</strong></li>
+      <li><strong>그 약점이 사실 어떤 강점에서 시작됐는지</strong></li>
+      <li><strong>고치려고 하면 오히려 안 되는 능력이 무엇인지</strong></li>
+    </ul>
+    <div class="sp"></div>
+    <p class="lead">그리고</p>
+    <div class="hgroup">
+      <h2>그런 나에게</h2>
+      <h2 class="sub">AI를 어떻게 활용하면 좋은지</h2>
+    </div>
+    <p class="lead">기본적인 방향까지 알려드립니다.</p>
+
+    <!-- 결과 화면 미리보기 — 엔진이 실제로 출력한 문장만 인용한다. 한 글자도 다듬지 않았다.
+         출처: evidence/report-out/ 세 리포트의 「0단계 · 무료 리포트」 구간
+           ① 1-idea-flood.md    (약점 축: idea_flood)      자기진단 L8 / 장면 L24 / 반전 L49
+           ② 2-perfectionist.md (약점 축: decision_delay)  자기진단 L8 / 장면 L24 / 반전 L40
+           ③ 3-sunk-cost.md     (약점 축: sunk_cost)       자기진단 L8 / 장면 L22 / 반전 L40
+         ⚠ 엔진 문장이 바뀌면 이 블록도 같이 바꾼다. node tools/landing-quote-check.mjs -->
+    <div class="card" style="margin-top:22px">
+      <h3 style="font-size:16px;color:var(--ink-dim);font-weight:700">무료 결과에는 이런 문장이 나옵니다</h3>
+      <p class="dim" style="margin:8px 0 0">세 사람의 실제 무료 결과입니다. 사람마다 이렇게 다른 문장이 나옵니다.</p>
+      <ul class="eng">
+        <li>
+          <p class="who">“나는 이것저것 벌여놓기만 하고 끝까지 못 하는 사람이다.”</p>
+          <p class="scene">A라는 업무를 하고 있을 때 새로운 B가 보입니다. B가 괜찮아 보여서 바로 확인합니다. 그런데 B를 보다 C가 보입니다.</p>
+          <p class="flip">그런데 당신에게 부족했던 건 끈기가 아닐 수 있습니다</p>
+        </li>
+        <li>
+          <p class="who">“나는 결정을 잘 못 내리는 사람이다.”</p>
+          <p class="scene">그런데 다음 날 아침, 처음 후보부터 다시 비교하고 있습니다. 알아볼 게 하나 더 생겼기 때문입니다. 그렇게 결정은 계속 내일로 갑니다.</p>
+          <p class="flip">그런데 당신에게 부족했던 건 결단력이 아닐 수 있습니다</p>
+        </li>
+        <li>
+          <p class="who">“나는 한번 맞다고 생각하면 잘 안 바꾸는 사람이다.”</p>
+          <p class="scene">우선순위가 바뀐 걸 알고 있습니다. 그런데 이미 해둔 게 아깝습니다. 그래서 버리는 대신 살릴 방법을 찾습니다. 다시 만드는 게 빠른 걸 알면서도, 이미 만든 걸 고쳐 쓰고 있습니다.</p>
+          <p class="flip">그런데 당신에게 부족했던 건 유연함이 아닐 수 있습니다</p>
+        </li>
+      </ul>
+    </div>
+
+    <div class="ctabox">
+      <a class="cta" href="/diagnose.html?p=onsaju" data-cta="free-mid">내 결과에는 어떤 문장이 나오는지 무료로 보기 <span class="arw">→</span></a>
+      <p class="cta-sub">여기까지 결제 없이 볼 수 있습니다</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 11. 가격 — 정본에 없다. 상품 정본(CLAUDE.md)의 가격 계단 ══════════ -->
+<section id="ch6">
+  <div class="read">
+    <div class="hgroup"><h2>더 보고 싶을 때만 결제합니다</h2></div>
+    <p class="lead">무료 결과를 먼저 끝까지 보고 결정하시면 됩니다.</p>
+
+    <div class="ladder">
+      <div class="tier free">
+        <span class="amt">무료</span>
+        <span class="what">강점 · 약점 · 그 약점이 시작된 강점 + AI 활용 방향
+          <small>결제 없이 여기까지 나옵니다</small></span>
+      </div>
+      <div class="tier">
+        <span class="amt">19,000원</span>
+        <span class="what">나에게 맞는 AI 활용 리포트
+          <small>내 일이 막히는 정확한 순간, 나와 AI가 나눠 맡을 일, 나에게 맞는 실제 프롬프트</small></span>
+      </div>
+      <div class="tier">
+        <span class="amt">+19,000원</span>
+        <span class="what">나만의 AI 회사 설계도
+          <small>위에 있는 조직도가 내 직업과 내 실제 업무로 다시 나옵니다</small></span>
+      </div>
+      <div class="tier">
+        <span class="amt">+19,000원</span>
+        <span class="what">AI 회사 설치 프롬프트
+          <small>붙여넣으면 나에게 맞는 AI 회사 구축을 바로 시작할 수 있습니다</small></span>
+      </div>
+    </div>
+    <p class="dim" style="margin-top:14px">Claude Code · Codex 환경이나 연결한 도구에 따라 추가 설정이 필요할 수 있습니다.</p>
+  </div>
+</section>
+
+<!-- ══════════ 12. 정본 330-353행 ══════════ -->
+<section class="band2">
+  <div class="read">
+    <div class="finale">
+      <div class="hgroup">
+        <h2>AI가 나를 도와주고 있는지</h2>
+        <h2 class="sub">오히려 나를 더 힘들게 하고 있는지</h2>
+      </div>
+      <p class="mid">지금 한번 확인해보세요.</p>
+      <p>남들이 좋다는 프롬프트를<br />그대로 따라 하기 전에</p>
+      <p>먼저</p>
+      <p><strong>나는 어떤 사람인지,</strong></p>
+      <p><strong>그리고 나 같은 사람에게 AI는<br />어떤 역할을 해야 하는지</strong></p>
+      <p>알아보는 것부터 시작해보세요.</p>
+      <div class="hgroup" style="margin:26px 0 20px">
+        <h2>나를 알면</h2>
+        <h2 class="sub">AI를 쓰는 방법도 달라집니다.</h2>
+      </div>
+      <div class="ctabox" style="margin-top:0">
+        <a class="cta" href="/diagnose.html?p=onsaju" data-cta="free-bottom"><strong>무료로 나의 강점·약점과<br />나에게 맞는 AI 활용 방향 확인하기</strong> <span class="arw">→</span></a>
+        <p class="cta-sub">결제 없이 결과까지 · 생년월일시와 질문 20~30개</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 13. FAQ ══════════ -->
+<section style="padding-top:clamp(26px,3.6vh,44px)">
+  <div class="faq">
+    <details><summary>사주를 보는 서비스인가요?</summary><p>사주만 보는 서비스가 아닙니다. 생년월일시로 계산한 사주와, 지금 실제로 어떻게 일하는지 답한 20~30개의 응답을 같이 봅니다. 결과는 둘을 따로 보여주지 않고 하나의 글로 보여드립니다. 미래를 예언하지 않습니다.</p></details>
+    <details><summary>결제를 먼저 해야 하나요?</summary><p>아닙니다. 무료 결과를 끝까지 보신 다음, 더 깊은 내용이 궁금하실 때 결제하시면 됩니다.</p></details>
+    <details><summary>얼마나 걸리나요?</summary><p>질문에 답하고 생년월일시를 입력하는 데 3분 정도입니다.</p></details>
+    <details><summary>유형 이름이 나오나요?</summary><p>나오지 않습니다. 이름표를 붙이는 대신, 당신이 실제로 반복하는 행동과 그 행동이 어떤 강점에서 시작됐는지를 문장으로 보여드립니다.</p></details>
+    <details><summary>진단이나 치료인가요?</summary><p>아닙니다. 나를 이해하는 데 도움을 주는 콘텐츠이며 의학적·심리학적 진단이 아닙니다. 어려움이 크시다면 전문가와 상담하시길 권합니다.</p></details>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <p>
+    <a href="/">Root Me</a> · 커스텀AI &nbsp;|&nbsp;
+    <a href="/terms.html">이용약관</a> ·
+    <a href="/privacy.html">개인정보처리방침</a> ·
+    <a href="/refund.html">환불정책</a>
+  </p>
+  <p style="margin-top:8px">
+    생년월일시로 계산한 사주와 지금 실제로 하는 행동 응답을 함께 보고, 나를 이해하는 데 도움을 주는 콘텐츠입니다. 미래를 예언하거나 의학적 진단을 하지 않습니다.
+  </p>
+</footer>
+
+<div class="stickybar" id="stickybar">
+  <a href="/diagnose.html?p=onsaju" data-cta="sticky">무료로 확인하기 →</a>
+</div>
+
+<script src="/assets/track-config.js"></script>
+<script src="/track.js" defer></script>
+<script>
+(function(){
+  var top=document.getElementById('topbar');
+  var bar=document.getElementById('progress');
+  var sticky=document.getElementById('stickybar');
+
+  function onScroll(){
+    var y=window.scrollY||0;
+    var h=Math.max(1, document.documentElement.scrollHeight-window.innerHeight);
+    if(top) top.classList.toggle('stuck', y>6);
+    if(bar) bar.style.width=Math.min(100,(y/h)*100)+'%';
+    if(sticky) sticky.classList.toggle('show', y>520);
+  }
+  onScroll();
+  window.addEventListener('scroll', onScroll, {passive:true});
+  window.addEventListener('resize', onScroll, {passive:true});
+
+  document.addEventListener('DOMContentLoaded', function(){
+    try{ if(window.rmTrack) window.rmTrack('landing_view',{ product:'onsaju' }); }catch(e){}
+    document.querySelectorAll('[data-cta]').forEach(function(el){
+      el.addEventListener('click', function(){
+        try{ if(window.rmTrack) window.rmTrack('diagnostic_cta_click',{ product:'onsaju', slot: el.getAttribute('data-cta') }); }catch(e){}
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>
