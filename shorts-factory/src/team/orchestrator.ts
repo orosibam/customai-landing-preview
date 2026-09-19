@@ -1,4 +1,4 @@
-import { CHANNELS, DUPLICATE_MODE, dailySlotCount } from '../config.js';
+import { CHANNELS, dailySlotCount } from '../config.js';
 import { audienceFor, PLATFORM_DEFAULT_AUDIENCE, type AudienceKey } from '../lib/audience.js';
 import { closeBrowser } from '../lib/browser.js';
 import { estimateCostUsd } from '../lib/llm.js';
@@ -70,7 +70,7 @@ export async function runDailyTeam(): Promise<SlotOutcome[]> {
   const runId = await openRun(runDate);
 
   console.log(
-    `\n=== ${runDate} 제작 시작 · 슬롯 ${dailySlotCount()}개${DUPLICATE_MODE ? ' (복제 모드)' : ''} ===\n`,
+    `\n=== ${runDate} 제작 시작 · 슬롯 ${dailySlotCount()}개 ===\n`,
   );
 
   const slots = buildSlots(runId);

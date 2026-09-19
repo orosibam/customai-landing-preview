@@ -76,7 +76,6 @@ jobs:
           ZOOM_FOOTAGE: ${{ vars.ZOOM_FOOTAGE }}
 
           REDIRECTOR_BASE_URL: ${{ vars.REDIRECTOR_BASE_URL }}
-          DUPLICATE_MODE: ${{ vars.DUPLICATE_MODE }}
         run: npx tsx src/stage.ts daily
 
       # 실패해도 로그는 남긴다. 어느 슬롯이 왜 죽었는지 봐야 한다.

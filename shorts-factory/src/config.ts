@@ -148,12 +148,6 @@ export const CHANNELS: ChannelConfig[] = [
   },
 ];
 
-/**
- * true 면 하루 2개만 렌더해서 5개 채널에 복사한다 (렌더 비용 1/5).
- * false 면 채널마다 다른 영상을 만든다 (기본값 — 중복 판정 위험 없음).
- */
-export const DUPLICATE_MODE = process.env.DUPLICATE_MODE === 'true';
-
 export function dailySlotCount(): number {
   return CHANNELS.reduce((sum, c) => sum + c.dailyCount, 0);
 }

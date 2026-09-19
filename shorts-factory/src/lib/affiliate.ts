@@ -78,12 +78,46 @@ export function trackedUrl(destination: string, params: {
   return url.toString();
 }
 
+/**
+ * 인포크링크 항목 번호.
+ *
+ * 틱톡·인스타는 설명란 링크가 클릭되지 않는다. 그래서 프로필에 인포크링크를 걸어두고
+ * 영상에서는 **번호로 지칭**한다 — "프로필 링크 29번". 이 번호가 빠지면 시청자가
+ * 수백 개 목록에서 상품을 못 찾아 그대로 이탈한다.
+ */
+export interface ItemRef {
+  itemNumber: number;
+  pageUrl: string;
+}
+
+/**
+ * 영상 제목.
+ *
+ * 번호 지칭을 제목에 넣는 이유는 시청자가 설명란을 펴지 않기 때문이다.
+ * 제목은 피드에서 바로 보인다.
+ */
+export function buildTitle(productTitle: string, item?: ItemRef): string {
+  const base = productTitle.trim();
+  if (!item) return base.slice(0, 80);
+  const suffix = ` · 프로필 링크 ${item.itemNumber}번`;
+  return base.slice(0, 80 - suffix.length) + suffix;
+}
+
 /** 영상 설명란에 붙일 문구. 제휴 고지를 반드시 포함한다. */
-export function buildDescription(target: LinkTarget, linkUrl: string, hashtags: string[]): string {
+export function buildDescription(
+  target: LinkTarget,
+  linkUrl: string,
+  hashtags: string[],
+  item?: ItemRef,
+): string {
+  const route = item
+    ? [`프로필 링크 ${item.itemNumber}번에서 확인하세요`, item.pageUrl]
+    : [`구매하기 ▶ ${linkUrl}`];
+
   return [
-    `${target.productTitle}`,
+    target.productTitle,
     '',
-    `구매하기 ▶ ${linkUrl}`,
+    ...route,
     '',
     // 공정거래위원회 추천·보증 심사지침상 경제적 대가를 받는 경우 명시해야 한다.
     '※ 이 영상은 제휴 마케팅 링크를 포함하며, 구매 시 일정액의 수수료를 받습니다.',
@@ -93,6 +127,7 @@ export function buildDescription(target: LinkTarget, linkUrl: string, hashtags: 
 }
 
 /** 고정 댓글 문구. 설명란을 안 펴는 시청자를 위한 두 번째 경로. */
-export function buildPinnedComment(linkUrl: string): string {
-  return `구매 링크 ▶ ${linkUrl}\n(제휴 링크이며 구매 시 수수료를 받습니다)`;
+export function buildPinnedComment(linkUrl: string, item?: ItemRef): string {
+  const target = item ? `프로필 링크 ${item.itemNumber}번 ▶ ${item.pageUrl}` : `구매 링크 ▶ ${linkUrl}`;
+  return `${target}\n(제휴 링크이며 구매 시 수수료를 받습니다)`;
 }

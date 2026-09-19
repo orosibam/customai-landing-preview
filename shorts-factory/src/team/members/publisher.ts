@@ -2,7 +2,15 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { UPLOAD_JITTER_MINUTES } from '../../config.js';
-import { buildDescription, buildPinnedComment, resolveLinkMode, trackedUrl } from '../../lib/affiliate.js';
+import {
+  buildDescription,
+  buildPinnedComment,
+  buildTitle,
+  resolveLinkMode,
+  trackedUrl,
+  type ItemRef,
+} from '../../lib/affiliate.js';
+import { registerProduct } from '../../lib/affiliate/inpock.js';
 import { publisherFor } from '../../lib/publishers/index.js';
 import { downloadFile } from '../../lib/storage.js';
 import { db, must } from '../../lib/supabase.js';
@@ -130,17 +138,27 @@ export async function publishApproved(
     const hashtags = ['꿀템', '쇼핑', channel.category.replace(/[·\s]/g, '')];
 
     try {
+      // 인포크링크 모드면 업로드 **전에** 상품을 등록해 번호를 받아야 한다.
+      // 제목에 "프로필 링크 N번" 을 박아야 하는데, 올리고 나서 제목을 고치는 건
+      // 플랫폼마다 되기도 하고 안 되기도 해서 순서를 뒤집을 수 없다.
+      let item: ItemRef | undefined;
+      if (linkMode === 'inpock') {
+        item = await registerProduct({ affiliateUrl: linkUrl, productTitle: product.title_ko });
+        console.log(`유통 담당: ${channel.key} 인포크링크 ${item.itemNumber}번으로 등록`);
+      }
+
       const videoPath = await downloadFile(row.storage_path, join(dir, `${row.id}.mp4`));
       const thumbPath = await downloadFile(row.thumb_path, join(dir, `${row.id}.jpg`));
 
       const result = await publisher.publish({
         videoPath,
         thumbPath,
-        title: product.title_ko.slice(0, 80),
+        title: buildTitle(product.title_ko, item),
         description: buildDescription(
           { productTitle: product.title_ko, productUrl: destination, merchantPlatform: channel.platform },
           linkUrl,
           hashtags,
+          item,
         ),
         hashtags,
         scheduledAt,
@@ -159,7 +177,9 @@ export async function publishApproved(
               external_url: result.externalUrl,
               scheduled_at: scheduledAt.toISOString(),
               link_status: 'pending',
-              link_url: linkUrl,
+              // 인포크링크 모드면 시청자가 실제로 들어가는 곳은 진열 페이지다.
+              // 쿠팡 딥링크를 저장해두면 나중에 어디서 클릭이 났는지 추적이 어긋난다.
+              link_url: item?.pageUrl ?? linkUrl,
             },
             { onConflict: 'render_id,channel_id' },
           )
@@ -174,7 +194,7 @@ export async function publishApproved(
           externalId: result.externalId,
           linkMode,
           linkUrl,
-          pinnedComment: buildPinnedComment(linkUrl),
+          pinnedComment: buildPinnedComment(linkUrl, item),
           productUrl: destination,
           credentialsRef: channel.credentials_ref,
         });

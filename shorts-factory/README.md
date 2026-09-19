@@ -157,7 +157,6 @@ DB 스키마는 `supabase/migrations/0001_init.sql` 을 Supabase 에 적용한�
 | `MIRROR_FOOTAGE` | `true` 면 소재를 좌우 반전. 중복 판정 회피 목적이라 기본값은 끔 |
 | `ZOOM_FOOTAGE` | 소재 확대 비율 (기본 `1.1`). 가장자리 워터마크를 프레임 밖으로 민다 |
 | `REDIRECTOR_BASE_URL` | 클릭 추적 리다이렉터 도메인 (선택) |
-| `DUPLICATE_MODE` | `true` 면 2개만 렌더해 5채널에 복사 (아래 미구현 참고) |
 | `HEADFUL` | `true` 면 브라우저를 눈에 보이게 띄운다. 셀렉터 맞출 때만 |
 | `FFMPEG_PATH`, `FFPROBE_PATH` | PATH 에 없을 때만 |
 
@@ -184,7 +183,6 @@ DB 스키마는 `supabase/migrations/0001_init.sql` 을 Supabase 에 적용한�
 - 타입캐스트 웹 자동화 폴백 (API 가능 여부 확인 후 판단)
 - 성장 분석의 **플랫폼별 지표 수집** — 지금은 리다이렉터가 기록한 클릭뿐이고 조회수·수익
   수집은 스켈레톤이다. 이게 비면 피드백 루프가 닫히지 않는다.
-- `DUPLICATE_MODE` — 값을 읽어 로그에 표시만 하고 실제 복제 로직은 없다.
   켜도 채널마다 따로 만든다.
 - **다중 플랫폼 레퍼런스 발굴** — 샤오홍슈·인스타 스크래퍼(`lib/scrapers/`)와
   `REFERENCE_QUOTA` 는 남아 있지만 제작 라인은 쓰지 않는다. 소싱 담당이 틱톡 인기순
