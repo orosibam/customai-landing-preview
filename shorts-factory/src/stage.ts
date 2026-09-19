@@ -47,8 +47,9 @@ const COMMANDS: Record<string, () => Promise<void>> = {
       console.log('승인 대기 중인 실행이 없습니다.');
       return;
     }
-    const { ok, failed } = await publishApproved(runId);
-    console.log(`배포 완료: 성공 ${ok}건, 실패 ${failed}건`);
+    const { ok, failed, deferred } = await publishApproved(runId);
+    console.log(`배포: 성공 ${ok}건, 실패 ${failed}건, 대기 ${deferred}건`);
+    // 대기는 실패가 아니다. 예정 시각이 아직 안 된 것뿐이라 30분 뒤 다시 집는다.
     if (ok === 0 && failed > 0) process.exitCode = 1;
   },
 

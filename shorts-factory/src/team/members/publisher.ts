@@ -32,9 +32,21 @@ export interface PublishTarget {
   blueprintId: string;
 }
 
-export function jitteredSchedule(base: Date = new Date()): Date {
+/**
+ * 렌더 ID에서 결정적으로 지연 분을 뽑는다.
+ *
+ * 난수를 쓰면 30분마다 도는 배포 워크플로가 돌 때마다 예정 시각이 바뀌어
+ * 영영 도달하지 않는다. 같은 렌더는 언제 계산해도 같은 값이 나와야 한다.
+ */
+export function jitterMinutesFor(renderId: string): number {
+  let hash = 0;
+  for (const ch of renderId) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
   const { min, max } = UPLOAD_JITTER_MINUTES;
-  return new Date(base.getTime() + (min + Math.random() * (max - min)) * 60_000);
+  return min + (hash % (max - min + 1));
+}
+
+export function jitteredSchedule(renderId: string, approvedAt: Date): Date {
+  return new Date(approvedAt.getTime() + jitterMinutesFor(renderId) * 60_000);
 }
 
 /**
@@ -43,13 +55,15 @@ export function jitteredSchedule(base: Date = new Date()): Date {
  * 이 담당자만 예외적으로 Brief 단위가 아니라 실행(run) 단위로 일한다.
  * 승인은 사람이 나중에 한꺼번에 누르기 때문이다.
  */
-export async function publishApproved(runId: string): Promise<{ ok: number; failed: number }> {
+export async function publishApproved(
+  runId: string,
+): Promise<{ ok: number; failed: number; deferred: number }> {
   const rows = await must(
     '승인된 렌더 조회',
     db()
       .from('renders')
       .select(
-        `id, storage_path, thumb_path, channel_id,
+        `id, storage_path, thumb_path, channel_id, approved_at,
          channels!inner(key, platform, category, credentials_ref, subscriber_count),
          narrations!inner(scripts!inner(blueprint_id,
            products!inner(title_ko, product_url)))`,
@@ -63,6 +77,7 @@ export async function publishApproved(runId: string): Promise<{ ok: number; fail
     storage_path: string;
     thumb_path: string;
     channel_id: string;
+    approved_at: string | null;
     channels: {
       key: string;
       platform: string;
@@ -76,14 +91,30 @@ export async function publishApproved(runId: string): Promise<{ ok: number; fail
   const approved = rows as unknown as Row[];
   if (approved.length === 0) {
     console.log('유통 담당: 승인된 건이 없습니다.');
-    return { ok: 0, failed: 0 };
+    return { ok: 0, failed: 0, deferred: 0 };
   }
 
   const dir = await mkdtemp(join(tmpdir(), 'publish-'));
   let ok = 0;
   let failed = 0;
+  let deferred = 0;
 
   for (const row of approved) {
+    // 예정 시각 전이면 건너뛴다. 30분마다 도는 배포 워크플로가 나중에 다시 집는다.
+    //
+    // 예약 게시를 지원하는 건 유튜브뿐이라, 나머지 플랫폼에서 시각을 흩뿌리려면
+    // 업로드 자체를 늦게 시작하는 수밖에 없다. 승인 버튼 한 번에 10편이 같은 분에
+    // 나가면 기계가 돌린다는 게 그대로 드러난다.
+    const approvedAt = row.approved_at ? new Date(row.approved_at) : new Date();
+    const scheduledAt = jitteredSchedule(row.id, approvedAt);
+
+    if (scheduledAt > new Date()) {
+      const waitMin = Math.round((scheduledAt.getTime() - Date.now()) / 60_000);
+      console.log(`유통 담당: ${row.channels.key} 대기 중 — ${waitMin}분 후 예정`);
+      deferred++;
+      continue;
+    }
+
     const channel = row.channels;
     const product = row.narrations.scripts.products;
     const publisher = publisherFor(channel.platform);
@@ -97,7 +128,6 @@ export async function publishApproved(runId: string): Promise<{ ok: number; fail
     });
 
     const hashtags = ['꿀템', '쇼핑', channel.category.replace(/[·\s]/g, '')];
-    const scheduledAt = jitteredSchedule();
 
     try {
       const videoPath = await downloadFile(row.storage_path, join(dir, `${row.id}.mp4`));
@@ -168,7 +198,7 @@ export async function publishApproved(runId: string): Promise<{ ok: number; fail
     }
   }
 
-  return { ok, failed };
+  return { ok, failed, deferred };
 }
 
 export const publisher: TeamMember = {
