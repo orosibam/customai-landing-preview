@@ -80,7 +80,16 @@ export function voicePreset(key: string): VoicePreset {
   if (!preset.actorId) {
     throw new Error(
       `보이스 프리셋 "${key}" 의 actorId 가 비어 있습니다. ` +
-        `Phase 0에서 타입캐스트 액터 목록을 확인해 환경변수를 채우세요.`,
+        `타입캐스트 계정의 API 메뉴에서 액터 ID를 확인해 환경변수를 채우세요.`,
+    );
+  }
+  // 액터 ID는 tc_ 로 시작한다. 성우 이름이나 화면에 보이는 라벨을 넣는 실수가 잦아서
+  // 여기서 막는다 — 안 막으면 합성 요청이 400 으로 떨어지고 원인을 찾기 어렵다.
+  if (!/^tc_[0-9a-f]+$/i.test(preset.actorId)) {
+    throw new Error(
+      `보이스 프리셋 "${key}" 의 actorId 형식이 이상합니다: "${preset.actorId}"\n` +
+        `  tc_ 로 시작하는 식별자여야 합니다 (예: tc_60e5426de8b95f1d3000d7b5).\n` +
+        `  성우 이름이 아니라 액터 ID를 넣으셨는지 확인하세요.`,
     );
   }
   return preset;
@@ -117,10 +126,16 @@ const DURATION_TOLERANCE = { min: 0.45, max: 2.2 } as const;
 const API_BASE = optionalEnv('TYPECAST_API_BASE', 'https://typecast.ai/api');
 
 /**
- * 타입캐스트 합성 요청 한 건.
+ * 타입캐스트 합성.
  *
- * 요청/응답 매핑을 이 함수 하나에 가둬둔다. API 스펙이 바뀌거나 Phase 0 확인 결과가
- * 다르면 여기만 고치면 된다 — 나머지 파이프라인은 손대지 않는다.
+ * 한 번에 끝나지 않는다. 요청을 넣으면 **작업 상태를 볼 주소**(speak_v2_url)를 주고,
+ * 합성이 끝날 때까지 그 주소를 들여다보다가 status 가 done 이 되면 그제서야
+ * 오디오 주소가 채워진다.
+ *
+ * 이 두 단계를 한 단계로 착각하면 상태 JSON 을 .wav 로 저장하게 된다.
+ * 파일은 만들어지고 파이프라인도 안 멈추는데 소리만 없다 — 제일 나쁜 종류의 실패다.
+ *
+ * 요청/응답 매핑은 이 파일 안에만 둔다. 스펙이 바뀌면 여기만 고친다.
  */
 async function synthesizeViaApi(
   textSpoken: string,
@@ -139,13 +154,14 @@ async function synthesizeViaApi(
       actor_id: preset.actorId,
       text: textSpoken,
       lang: 'auto',
+      // 0.5~2.0 배. 시니어 대상은 1.25 근처를 쓴다.
       tempo: preset.speed,
+      // 0~200. 100 이 원음이다.
       volume: 100,
+      // 반음 단위(-12~+12). 영상에서 +1 이 적정, +2 는 과하다고 판정됐다.
       pitch: preset.pitch,
       emotion_tone_preset: preset.emotion,
       xapi_hd: true,
-      // 문장 사이 공백 0 — 루즈해지지 않게.
-      max_seconds: 30,
     }),
   });
 
@@ -154,15 +170,69 @@ async function synthesizeViaApi(
     throw new TypecastApiError(res.status, `${res.status} ${res.statusText} ${body.slice(0, 300)}`);
   }
 
-  const payload = (await res.json()) as { result?: { speak_v2_url?: string; audio_download_url?: string } };
-  const audioUrl = payload.result?.audio_download_url ?? payload.result?.speak_v2_url;
-  if (!audioUrl) {
-    throw new TypecastApiError(200, `응답에 오디오 URL이 없습니다: ${JSON.stringify(payload).slice(0, 300)}`);
+  const payload = (await res.json()) as { result?: { speak_v2_url?: string } };
+  const statusUrl = payload.result?.speak_v2_url;
+  if (!statusUrl) {
+    throw new TypecastApiError(
+      200,
+      `응답에 speak_v2_url 이 없습니다: ${JSON.stringify(payload).slice(0, 300)}`,
+    );
   }
+
+  const audioUrl = await pollUntilDone(statusUrl, token);
 
   const audio = await fetch(audioUrl);
   if (!audio.ok) throw new TypecastApiError(audio.status, `오디오 다운로드 실패: ${audio.status}`);
-  await writeFile(outPath, Buffer.from(await audio.arrayBuffer()));
+
+  const bytes = Buffer.from(await audio.arrayBuffer());
+
+  // 오디오 대신 에러 JSON 이 왔는데 200 으로 오는 경우가 있다.
+  // 무음 파일을 만들어 넘기느니 여기서 죽는 편이 낫다.
+  if (bytes.byteLength < 1_024) {
+    throw new TypecastApiError(200, `오디오가 ${bytes.byteLength}바이트뿐입니다. 합성이 실패했을 수 있습니다.`);
+  }
+
+  await writeFile(outPath, bytes);
+}
+
+/** 합성이 끝날 때까지 기다렸다가 오디오 주소를 돌려준다. */
+async function pollUntilDone(statusUrl: string, token: string): Promise<string> {
+  const startedAt = Date.now();
+  const timeoutMs = 90_000;
+  let waitMs = 700;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const res = await fetch(statusUrl, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      throw new TypecastApiError(res.status, `상태 조회 실패: ${res.status} ${res.statusText}`);
+    }
+
+    const body = (await res.json()) as {
+      result?: { status?: string; audio_download_url?: string | null };
+    };
+    const status = body.result?.status;
+
+    if (status === 'done') {
+      const url = body.result?.audio_download_url;
+      if (!url) {
+        throw new TypecastApiError(200, 'status 가 done 인데 오디오 주소가 비어 있습니다.');
+      }
+      return url;
+    }
+
+    if (status && status !== 'progress' && status !== 'started') {
+      throw new TypecastApiError(200, `합성이 "${status}" 상태로 끝났습니다.`);
+    }
+
+    await new Promise((r) => setTimeout(r, waitMs));
+    // 짧은 문장은 금방 끝나므로 처음엔 자주 보고, 길어지면 간격을 벌린다.
+    waitMs = Math.min(waitMs * 1.4, 4_000);
+  }
+
+  throw new TypecastApiError(
+    408,
+    `합성이 ${timeoutMs / 1000}초 안에 끝나지 않았습니다: ${statusUrl}`,
+  );
 }
 
 export class TypecastApiError extends Error {
