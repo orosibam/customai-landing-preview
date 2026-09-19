@@ -33,43 +33,54 @@ export interface VoicePreset {
 }
 
 /**
- * 채널별 보이스. actorId 는 계정마다 다르므로 환경변수로 뺀다.
- * Phase 0에서 실제 액터 목록을 확인해 채운다.
+ * 채널별 보이스.
+ *
+ * 액터 ID는 비밀값이 아니라 공개 식별자라 여기 그대로 둔다. Secrets 로 빼면
+ * 관리할 비밀이 다섯 개 늘어나는데, 얻는 게 없다. 계정을 바꾸거나 성우를
+ * 교체할 때만 환경변수로 덮어쓴다.
+ *
+ * 속도는 타겟 프로파일(lib/audience.ts)이 덮어쓴다. 여기 값은 그 프로파일이
+ * 없을 때의 기본값이다.
  */
 export const VOICE_PRESETS: Record<string, VoicePreset> = {
+  // 생활·수납용품 채널
   'warm-female': {
-    actorId: optionalEnv('TYPECAST_ACTOR_WARM_FEMALE', ''),
+    actorId: optionalEnv('TYPECAST_ACTOR_WARM_FEMALE', 'tc_65a0e1eb23a607b9906c0154'),
     emotion: 'normal-1',
     pitch: 1,
     speed: 1.0,
     pauseSec: 0,
   },
-  'bright-male': {
-    actorId: optionalEnv('TYPECAST_ACTOR_BRIGHT_MALE', ''),
-    emotion: 'happy-1',
-    pitch: 1,
-    speed: 1.05,
-    pauseSec: 0,
-  },
+  // 주방용품 채널
   'calm-female': {
-    actorId: optionalEnv('TYPECAST_ACTOR_CALM_FEMALE', ''),
+    actorId: optionalEnv('TYPECAST_ACTOR_CALM_FEMALE', 'tc_69f2e455ea79fd197aa0476f'),
     emotion: 'normal-1',
     pitch: 0,
     speed: 0.98,
     pauseSec: 0,
   },
+  // 생활·인테리어 채널
   'soft-female': {
-    actorId: optionalEnv('TYPECAST_ACTOR_SOFT_FEMALE', ''),
+    actorId: optionalEnv('TYPECAST_ACTOR_SOFT_FEMALE', 'tc_68d4b115f0486108a7eefb37'),
     emotion: 'normal-1',
     pitch: 1,
     speed: 1.0,
     pauseSec: 0,
   },
+  // 가전·가젯 채널
   'energetic-male': {
-    actorId: optionalEnv('TYPECAST_ACTOR_ENERGETIC_MALE', ''),
+    actorId: optionalEnv('TYPECAST_ACTOR_ENERGETIC_MALE', 'tc_6a4f2130d153a5cac8e19996'),
     emotion: 'happy-1',
     pitch: 1,
     speed: 1.1,
+    pauseSec: 0,
+  },
+  // 뷰티·헬스 채널
+  'bright-male': {
+    actorId: optionalEnv('TYPECAST_ACTOR_BRIGHT_MALE', 'tc_6a7446c19f2d7dfed990a900'),
+    emotion: 'happy-1',
+    pitch: 1,
+    speed: 1.05,
     pauseSec: 0,
   },
 };

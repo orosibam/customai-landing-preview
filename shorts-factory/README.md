@@ -147,7 +147,7 @@ DB 스키마는 `supabase/migrations/0001_init.sql` 을 Supabase 에 적용한�
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | DB · 스토리지 |
 | `ANTHROPIC_API_KEY` | 담당자들의 LLM 호출 전부 |
 | `TYPECAST_API_TOKEN` | 나레이션 |
-| `TYPECAST_ACTOR_*` | 채널별 보이스 액터 ID (5개) |
+| `TYPECAST_ACTOR_*` | 선택 — 액터 ID는 `lib/typecast.ts` 에 기본값으로 있다. 성우를 바꿀 때만 덮어쓴다 |
 | `TIKTOK_STORAGE_STATE` | 틱톡 세션 JSON. 소싱·소재 담당의 탐색과 틱톡 업로드가 함께 쓴다 |
 | `XIAOHONGSHU_STORAGE_STATE`, `INSTAGRAM_STORAGE_STATE` | 브라우저 세션 JSON |
 | `NAVER_STORAGE_STATE` | 네이버 클립 업로드용 세션 JSON |
