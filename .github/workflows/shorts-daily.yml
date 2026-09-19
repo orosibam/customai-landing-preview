@@ -1,0 +1,101 @@
+name: 쇼핑쇼츠 일일 생성
+
+# 매일 새벽에 10개를 생성해 승인 대기 상태로 올려둔다.
+# 배포(S9)는 여기서 하지 않는다 — 대시보드에서 사람이 승인해야 나간다.
+on:
+  schedule:
+    # 매일 20:10 UTC = 한국시간 05:10. 아침에 확인하고 승인하면 된다.
+    - cron: '10 20 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '렌더까지만 하고 DB 기록을 건너뛴다'
+        type: boolean
+        default: false
+
+concurrency:
+  # 하루치가 겹쳐 돌면 같은 상품을 두 번 쓴다.
+  group: shorts-daily
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: shorts-factory/package-lock.json
+
+      # ubuntu-latest 러너에는 ffmpeg 가 기본 탑재되어 있다. 버전만 확인하고 넘어간다.
+      - name: ffmpeg 확인
+        run: ffmpeg -version | head -1
+
+      - name: 의존성 설치
+        working-directory: shorts-factory
+        run: npm ci
+
+      - name: Playwright 브라우저 설치
+        working-directory: shorts-factory
+        run: npx playwright install --with-deps chromium
+
+      - name: 발음 정규화 테스트
+        working-directory: shorts-factory
+        run: npx tsx src/lib/korean.test.ts
+
+      - name: 파이프라인 실행
+        working-directory: shorts-factory
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          TYPECAST_API_TOKEN: ${{ secrets.TYPECAST_API_TOKEN }}
+          TYPECAST_ACTOR_WARM_FEMALE: ${{ secrets.TYPECAST_ACTOR_WARM_FEMALE }}
+          TYPECAST_ACTOR_BRIGHT_MALE: ${{ secrets.TYPECAST_ACTOR_BRIGHT_MALE }}
+          TYPECAST_ACTOR_CALM_FEMALE: ${{ secrets.TYPECAST_ACTOR_CALM_FEMALE }}
+          TYPECAST_ACTOR_SOFT_FEMALE: ${{ secrets.TYPECAST_ACTOR_SOFT_FEMALE }}
+          TYPECAST_ACTOR_ENERGETIC_MALE: ${{ secrets.TYPECAST_ACTOR_ENERGETIC_MALE }}
+
+          # 브라우저 세션(storageState JSON). 만료되면 파이프라인이 그 플랫폼만 건너뛴다.
+          XIAOHONGSHU_STORAGE_STATE: ${{ secrets.XIAOHONGSHU_STORAGE_STATE }}
+          INSTAGRAM_STORAGE_STATE: ${{ secrets.INSTAGRAM_STORAGE_STATE }}
+
+          REDIRECTOR_BASE_URL: ${{ vars.REDIRECTOR_BASE_URL }}
+          DUPLICATE_MODE: ${{ vars.DUPLICATE_MODE }}
+        run: npx tsx src/run-daily.ts
+
+      # 실패해도 로그는 남긴다. 어느 슬롯이 왜 죽었는지 봐야 한다.
+      - name: 실행 로그 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-log-${{ github.run_id }}
+          path: shorts-factory/*.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # 전날 올린 것들의 성과를 매일 수집한다. 이게 돌아야 피드백 루프가 닫힌다.
+  metrics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: shorts-factory/package-lock.json
+      - working-directory: shorts-factory
+        run: npm ci
+      - working-directory: shorts-factory
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: npx tsx src/stage.ts s10

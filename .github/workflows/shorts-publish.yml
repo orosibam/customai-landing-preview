@@ -1,0 +1,73 @@
+name: 쇼핑쇼츠 배포
+
+# 대시보드에서 승인된 렌더만 배포한다.
+# 30분마다 승인 큐를 확인하므로, 승인 버튼을 누르면 30분 안에 나간다.
+# (업로드 시각 자체는 S9가 다시 15~240분 범위로 흩뿌린다)
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: '배포할 run 의 UUID (비우면 승인 대기 중인 가장 최근 run)'
+        type: string
+        required: false
+
+concurrency:
+  group: shorts-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: shorts-factory/package-lock.json
+
+      - working-directory: shorts-factory
+        run: npm ci
+
+      - name: 승인 대기 run 확인
+        id: find
+        working-directory: shorts-factory
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -n "${{ inputs.run_id }}" ]; then
+            echo "run_id=${{ inputs.run_id }}" >> "$GITHUB_OUTPUT"
+          else
+            RUN_ID=$(npx tsx -e "
+              import { db } from './src/lib/supabase.js';
+              const { data } = await db().from('runs')
+                .select('id').eq('status','awaiting_approval')
+                .order('run_date',{ascending:false}).limit(1).maybeSingle();
+              process.stdout.write(data?.id ?? '');
+            ")
+            echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 배포
+        if: steps.find.outputs.run_id != ''
+        working-directory: shorts-factory
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          YOUTUBE_CREDENTIALS_YT_KITCHEN: ${{ secrets.YOUTUBE_CREDENTIALS_YT_KITCHEN }}
+          YOUTUBE_CREDENTIALS_YT_CAR: ${{ secrets.YOUTUBE_CREDENTIALS_YT_CAR }}
+          NAVER_STORAGE_STATE: ${{ secrets.NAVER_STORAGE_STATE }}
+          INSTAGRAM_STORAGE_STATE: ${{ secrets.INSTAGRAM_STORAGE_STATE }}
+          TIKTOK_STORAGE_STATE: ${{ secrets.TIKTOK_STORAGE_STATE }}
+          REDIRECTOR_BASE_URL: ${{ vars.REDIRECTOR_BASE_URL }}
+        run: npx tsx src/stage.ts s9 --run-id=${{ steps.find.outputs.run_id }}
+
+      - name: 승인 대기 없음
+        if: steps.find.outputs.run_id == ''
+        run: echo "승인된 렌더가 없습니다. 건너뜁니다."
