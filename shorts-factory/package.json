@@ -13,7 +13,8 @@
     "stage": "tsx src/stage.ts",
     "probe": "tsx src/probe.ts",
     "typecheck": "tsc --noEmit",
-    "capture": "tsx src/capture-session.ts"
+    "capture": "tsx src/capture-session.ts",
+    "probe:typecast": "tsx src/probe-typecast.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
