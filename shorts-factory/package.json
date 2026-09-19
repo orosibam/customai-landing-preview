@@ -8,7 +8,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "daily": "tsx src/run-daily.ts",
+    "daily": "tsx src/stage.ts daily",
+    "team": "tsx src/stage.ts team",
     "stage": "tsx src/stage.ts",
     "probe": "tsx src/probe.ts",
     "typecheck": "tsc --noEmit"

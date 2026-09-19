@@ -1,54 +1,77 @@
 /**
- * 스테이지 단독 실행기.
+ * 실행기.
  *
- * 파이프라인 전체를 돌리지 않고 한 단계만 따로 돌려본다. 개발 중에도,
- * 운영에서 특정 단계가 실패했을 때 재현할 때도 쓴다.
- *
- *   npx tsx src/stage.ts s1
- *   npx tsx src/stage.ts s9 --run-id=<uuid>
- *   npx tsx src/stage.ts s10
+ *   npx tsx src/stage.ts team          팀 구성 출력
+ *   npx tsx src/stage.ts daily         오늘치 제작 (승인 대기까지)
+ *   npx tsx src/stage.ts publish --run-id=<uuid>
+ *   npx tsx src/stage.ts metrics
+ *   npx tsx src/stage.ts report        성과 요약
  */
 
 import { closeBrowser } from './lib/browser.js';
-import { openRun } from './lib/supabase.js';
-import { pickProducts } from './stages/s1-pick-products.js';
-import { publish } from './stages/s9-publish.js';
-import { collectMetrics } from './stages/s10-collect-metrics.js';
-import { runDaily } from './run-daily.js';
+import { db } from './lib/supabase.js';
+import { describeTeam } from './team/index.js';
+import { runDailyTeam } from './team/orchestrator.js';
+import { publishApproved } from './team/members/publisher.js';
+import { buildReport, collectMetrics, formatReport } from './team/members/growth.js';
 
 function arg(name: string): string | undefined {
   const prefix = `--${name}=`;
   return process.argv.find((a) => a.startsWith(prefix))?.slice(prefix.length);
 }
 
-const STAGES: Record<string, () => Promise<void>> = {
-  s1: async () => {
-    const runId = arg('run-id') ?? (await openRun(new Date().toISOString().slice(0, 10)));
-    await pickProducts(runId);
+/** 승인 대기 중인 가장 최근 실행을 찾는다. */
+async function latestAwaitingRun(): Promise<string | null> {
+  const { data } = await db()
+    .from('runs')
+    .select('id')
+    .eq('status', 'awaiting_approval')
+    .order('run_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
+}
+
+const COMMANDS: Record<string, () => Promise<void>> = {
+  team: async () => {
+    console.log(`\n${describeTeam()}\n`);
   },
-  s9: async () => {
-    const runId = arg('run-id');
-    if (!runId) throw new Error('s9 는 --run-id=<uuid> 가 필요합니다.');
-    await publish(runId);
+
+  daily: async () => {
+    await runDailyTeam();
   },
-  s10: async () => {
+
+  publish: async () => {
+    const runId = arg('run-id') ?? (await latestAwaitingRun());
+    if (!runId) {
+      console.log('승인 대기 중인 실행이 없습니다.');
+      return;
+    }
+    const { ok, failed } = await publishApproved(runId);
+    console.log(`배포 완료: 성공 ${ok}건, 실패 ${failed}건`);
+    if (ok === 0 && failed > 0) process.exitCode = 1;
+  },
+
+  metrics: async () => {
     await collectMetrics(Number(arg('lookback') ?? 14));
   },
-  all: runDaily,
+
+  report: async () => {
+    console.log(`\n${formatReport(await buildReport())}\n`);
+  },
 };
 
 async function main(): Promise<void> {
   const name = process.argv[2];
-  const stage = name ? STAGES[name] : undefined;
+  const command = name ? COMMANDS[name] : undefined;
 
-  if (!stage) {
-    console.error(`사용법: npx tsx src/stage.ts <${Object.keys(STAGES).join('|')}> [--run-id=<uuid>]`);
-    console.error('\nS2~S7은 앞 단계의 산출물이 필요해서 단독 실행 대신 `all` 로 돌립니다.');
+  if (!command) {
+    console.error(`사용법: npx tsx src/stage.ts <${Object.keys(COMMANDS).join('|')}> [--run-id=<uuid>]`);
     process.exit(1);
   }
 
   try {
-    await stage();
+    await command();
   } finally {
     await closeBrowser();
   }

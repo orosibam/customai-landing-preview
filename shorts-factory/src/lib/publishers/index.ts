@@ -54,23 +54,20 @@ export class NotImplementedPublisher implements Publisher {
   }
 }
 
+import { naverclipPublisher } from './naverclip.js';
+import { tiktokPublisher } from './tiktok.js';
 import { youtubePublisher } from './youtube.js';
 
 export const PUBLISHERS: Record<string, Publisher> = {
   youtube: youtubePublisher,
-  naverclip: new NotImplementedPublisher(
-    '네이버 클립',
-    '공식 API가 없어 Playwright 자동화가 유일한 경로입니다. ' +
-      '구독자 조건 없이 구매 링크 스티커가 붙는 유일한 채널이라 가장 먼저 구현할 가치가 있습니다. (Phase 0 ⑦)',
-  ),
+  // 네이버 클립·틱톡은 브라우저 자동화다. 셀렉터가 아직 실물로 검증되지 않아
+  // 첫 실행은 각 파일의 SELECTORS 를 맞추는 작업부터 시작한다 (Phase 0).
+  naverclip: naverclipPublisher,
   instagram: new NotImplementedPublisher(
     '인스타그램',
     'Content Publishing API(비즈니스 계정) 또는 Playwright. (Phase 2)',
   ),
-  tiktok: new NotImplementedPublisher(
-    '틱톡',
-    'Content Posting API 심사 또는 Playwright. (Phase 2)',
-  ),
+  tiktok: tiktokPublisher,
 };
 
 export function publisherFor(platform: string): Publisher {

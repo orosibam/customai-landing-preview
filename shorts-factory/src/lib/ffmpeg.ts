@@ -58,11 +58,27 @@ export async function probe(path: string): Promise<MediaInfo> {
  * 호출부가 실수로든 고의로든 더 긴 값을 넘기면 렌더가 진행되지 않고 죽는다.
  * 이 검사를 우회하는 경로를 만들지 않는 것이 이 함수의 존재 이유다.
  */
+export interface TrimOptions {
+  /**
+   * 재생 속도 배율. 소스 상품 영상은 대체로 늘어져서 1.0으로 두면 지루하다.
+   * 타겟 프로파일이 값을 준다 (시니어 1.3, 일반 1.0).
+   */
+  speed?: number;
+  /**
+   * 좌우 반전. 표준 영상 변환이지만, 이걸 켜는 실무적 이유는 플랫폼의
+   * 중복 영상 판정을 피하려는 것이다. 그 판단은 운영자가 한다.
+   */
+  mirror?: boolean;
+  /** 확대 비율. 1.1이면 110%. 크롭 여백을 없애고 워터마크를 프레임 밖으로 밀어낸다. */
+  zoom?: number;
+}
+
 export async function trimToPortrait(
   input: string,
   output: string,
   startSec: number,
   durationSec: number,
+  opts: TrimOptions = {},
 ): Promise<void> {
   if (durationSec > MAX_CLIP_SEC) {
     throw new Error(
@@ -75,20 +91,27 @@ export async function trimToPortrait(
   }
 
   const { width: W, height: H, fps } = VIDEO;
-  // 짧은 변을 맞춰 확대한 뒤 가운데를 잘라낸다. 여백(레터박스) 없이 화면을 꽉 채운다.
-  const vf = [
-    `scale=${W}:${H}:force_original_aspect_ratio=increase`,
+  const speed = opts.speed ?? 1;
+  const zoom = opts.zoom ?? 1;
+
+  // 속도를 올리면 원하는 결과 길이를 얻기 위해 소스를 그만큼 더 읽어야 한다.
+  const sourceDuration = durationSec * speed;
+
+  const filters = [
+    `scale=${Math.round(W * zoom)}:${Math.round(H * zoom)}:force_original_aspect_ratio=increase`,
+    // 짧은 변을 맞춰 확대한 뒤 가운데를 잘라낸다. 여백(레터박스) 없이 화면을 꽉 채운다.
     `crop=${W}:${H}`,
-    `fps=${fps}`,
-    'setsar=1',
-  ].join(',');
+  ];
+  if (opts.mirror) filters.push('hflip');
+  if (speed !== 1) filters.push(`setpts=${(1 / speed).toFixed(4)}*PTS`);
+  filters.push(`fps=${fps}`, 'setsar=1');
 
   await ff(FFMPEG, [
     '-y',
     '-ss', startSec.toFixed(3),
-    '-t', durationSec.toFixed(3),
+    '-t', sourceDuration.toFixed(3),
     '-i', input,
-    '-vf', vf,
+    '-vf', filters.join(','),
     '-an', // 소스 오디오는 버린다. 나레이션만 쓴다.
     '-c:v', 'libx264',
     '-preset', 'medium',

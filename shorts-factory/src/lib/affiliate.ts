@@ -10,7 +10,17 @@ import { optionalEnv, YT_SHOPPING_SUBSCRIBER_THRESHOLD } from '../config.js';
  * 채널이 조건을 넘기면 자동으로 쇼핑 태그로 승격한다.
  */
 
-export type LinkMode = 'inpock' | 'yt_shopping_tag' | 'naver_sticker';
+export type LinkMode = 'inpock' | 'yt_shopping_tag' | 'naver_sticker' | 'tiktok_shop';
+
+/**
+ * 틱톡샵 쇼핑 링크가 열리는 조건.
+ *
+ * 사업자 인증을 마쳤으면 팔로워 0명부터 바로 달 수 있다. 없으면 팔로워 1,000명만
+ * 넘기면 되고 조회수 조건은 없다 — 유튜브의 "90일 내 쇼츠 300만뷰" 와 비교하면
+ * 진입 장벽이 사실상 없는 셈이다.
+ */
+export const TIKTOK_FOLLOWER_THRESHOLD = 1_000;
+export const HAS_BUSINESS_VERIFICATION = process.env.TIKTOK_BUSINESS_VERIFIED === 'true';
 
 export interface LinkTarget {
   productTitle: string;
@@ -27,10 +37,21 @@ export interface LinkTarget {
  * - 인스타·틱톡: 프로필 링크 구조라 인포크링크.
  */
 export function resolveLinkMode(platform: string, subscriberCount: number): LinkMode {
+  // 네이버 클립: 조건 없이 구매 링크 스티커가 붙는다. 가장 유리하므로 무조건 스티커.
   if (platform === 'naverclip') return 'naver_sticker';
+
+  // 틱톡: 사업자 인증이 있으면 0명부터, 없으면 팔로워 1,000명부터.
+  if (platform === 'tiktok') {
+    const eligible = HAS_BUSINESS_VERIFICATION || subscriberCount >= TIKTOK_FOLLOWER_THRESHOLD;
+    return eligible ? 'tiktok_shop' : 'inpock';
+  }
+
+  // 유튜브: 조건(구독자 + 90일 내 조회수)을 넘겨야 쇼핑 태그가 열린다.
   if (platform === 'youtube' && subscriberCount >= YT_SHOPPING_SUBSCRIBER_THRESHOLD) {
     return 'yt_shopping_tag';
   }
+
+  // 그 밖에는 조건 없이 되는 인포크링크로 간다. 첫날부터 수익이 난다.
   return 'inpock';
 }
 

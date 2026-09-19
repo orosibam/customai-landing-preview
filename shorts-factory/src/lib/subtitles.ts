@@ -77,6 +77,8 @@ export async function writeAss(
   lines: SubtitleLine[],
   outputPath: string,
   style: SubtitleStyle = DEFAULT_STYLE,
+  /** 한 줄 최대 글자수. 글자를 크게 쓸수록 줄이 짧아야 화면을 안 넘는다. */
+  maxCharsPerLine = 16,
 ): Promise<void> {
   const header = [
     '[Script Info]',
@@ -100,7 +102,7 @@ export async function writeAss(
     const start = cursor;
     const end = cursor + line.durationSec;
     events.push(
-      `Dialogue: 0,${toAssTime(start)},${toAssTime(end)},Main,,0,0,0,,${escape(wrap(line.text))}`,
+      `Dialogue: 0,${toAssTime(start)},${toAssTime(end)},Main,,0,0,0,,${escape(wrap(line.text, maxCharsPerLine))}`,
     );
     cursor = end;
   }

@@ -67,6 +67,8 @@ DB 스키마는 `supabase/migrations/0001_init.sql` 을 Supabase 에 적용한�
 | `TYPECAST_API_TOKEN` | 나레이션 |
 | `TYPECAST_ACTOR_*` | 채널별 보이스 액터 ID (5개) |
 | `XIAOHONGSHU_STORAGE_STATE`, `INSTAGRAM_STORAGE_STATE` | 브라우저 세션 JSON |
+| `NAVER_STORAGE_STATE`, `TIKTOK_STORAGE_STATE` | 업로드용 브라우저 세션 JSON |
+| `NAVER_CLIP_UPLOAD_URL`, `NAVER_CLIP_EDIT_URL`, `TIKTOK_UPLOAD_URL`, `TIKTOK_CONTENT_URL` | 업로드 화면 URL 이 바뀌었을 때만 (선택) |
 | `YOUTUBE_CREDENTIALS_*` | 채널별 OAuth (`{client_id, client_secret, refresh_token}`) |
 | `REDIRECTOR_BASE_URL` | 클릭 추적 리다이렉터 도메인 (선택) |
 | `DUPLICATE_MODE` | `true` 면 2개만 렌더해 5채널에 복사 |
@@ -85,7 +87,11 @@ DB 스키마는 `supabase/migrations/0001_init.sql` 을 Supabase 에 적용한�
 
 ## 알려진 미구현
 
-- 네이버 클립 · 인스타 · 틱톡 업로드 (`lib/publishers/` — 현재 명시적으로 에러를 던진다)
+- 인스타 업로드 (`lib/publishers/` — 현재 명시적으로 에러를 던진다)
+- 네이버 클립 · 틱톡 업로드는 Playwright 로 구현돼 있으나 **셀렉터가 미검증**이다.
+  각 파일 상단의 `SELECTORS` / `URLS` 를 Phase 0 에서 `HEADFUL=true` 로 띄워 맞춰야 한다.
+  두 채널 모두 예약 게시는 자동화하지 않았다 (즉시 게시된다).
+- 틱톡샵 상품 링크 (셀러 계정 흐름 필요 → 현재 명시적으로 에러를 던진다)
 - 유튜브 쇼핑 상품 태그 (공개 API 없음 → Studio 브라우저 자동화 필요)
 - 타입캐스트 웹 자동화 폴백 (API 가능 여부 확인 후 판단)
 - S10의 플랫폼별 지표 수집 (현재 스켈레톤)

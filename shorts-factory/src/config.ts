@@ -44,6 +44,18 @@ export const TARGET_SOURCE_COUNT = 5;
 // 산출물 규격
 // ---------------------------------------------------------------------------
 
+/**
+ * 소스 클립 좌우 반전 여부.
+ *
+ * 표준 영상 변환이지만, 이걸 켜는 실무적 이유는 플랫폼의 중복 영상 판정을
+ * 피하려는 것이다. 정책과 부딪힐 수 있는 선택이라 기본값을 끔으로 두고
+ * 운영자가 환경변수로 명시적으로 켜게 한다.
+ */
+export const MIRROR_FOOTAGE = process.env.MIRROR_FOOTAGE === 'true';
+
+/** 소스 확대 비율. 크롭 여백을 없애고 가장자리 워터마크를 프레임 밖으로 민다. */
+export const ZOOM_FOOTAGE = Number(optionalEnv('ZOOM_FOOTAGE', '1.1'));
+
 export const VIDEO = {
   width: 1080,
   height: 1920,
@@ -71,6 +83,11 @@ export interface ChannelConfig {
   voicePreset: string;
   /** 하루에 이 채널에 올릴 개수 */
   dailyCount: number;
+  /**
+   * 타겟 시청층. 생략하면 플랫폼 기본값(PLATFORM_DEFAULT_AUDIENCE)을 쓴다.
+   * 이 값 하나가 대본 화법, 나레이션 속도, 컷 개수, 자막 크기를 전부 바꾼다.
+   */
+  audience?: 'senior' | 'general';
 }
 
 /**
@@ -80,45 +97,54 @@ export interface ChannelConfig {
  * 전부 youtube 로 바꿔도 파이프라인은 그대로 돈다 (publisher 만 갈아끼운다).
  */
 export const CHANNELS: ChannelConfig[] = [
+  // 틱톡을 앞에 둔다. 수익화까지 가장 빨리 닿는 채널이기 때문이다.
+  // 사업자 인증만 하면 팔로워 0명부터 쇼핑 링크를 달 수 있고, 없어도 1,000명만
+  // 채우면 조회수 조건이 없다. 유튜브의 "90일 내 쇼츠 300만뷰" 와 비교가 안 된다.
+  // 게다가 시니어 유입이 많아 느리고 단순한 영상이 오히려 잘 먹혀 제작이 쉽다.
   {
-    key: 'yt-kitchen',
-    platform: 'youtube',
-    category: '주방·정리용품',
-    seedKeywords: ['주방용품', '정리용품', '수납', '주방정리'],
+    key: 'tt-living',
+    platform: 'tiktok',
+    category: '생활·수납용품',
+    seedKeywords: ['생활꿀템', '살림템', '수납', '정리용품'],
     voicePreset: 'warm-female',
     dailyCount: 2,
+    audience: 'senior',
   },
   {
-    key: 'yt-car',
-    platform: 'youtube',
-    category: '차량·세차용품',
-    seedKeywords: ['세차용품', '차량용품', '카샴푸', '차량정리'],
-    voicePreset: 'bright-male',
+    key: 'tt-kitchen',
+    platform: 'tiktok',
+    category: '주방용품',
+    seedKeywords: ['주방꿀템', '주방용품', '요리도구', '주방가전'],
+    voicePreset: 'calm-female',
     dailyCount: 2,
+    audience: 'senior',
   },
   {
     key: 'naver-living',
     platform: 'naverclip',
     category: '생활·인테리어',
-    seedKeywords: ['생활용품', '인테리어소품', '홈데코', '수납장'],
-    voicePreset: 'calm-female',
+    seedKeywords: ['생활용품', '인테리어소품', '홈데코', '가성비템'],
+    voicePreset: 'soft-female',
     dailyCount: 2,
+    audience: 'senior',
+  },
+  {
+    key: 'yt-gadget',
+    platform: 'youtube',
+    category: '가전·가젯',
+    seedKeywords: ['생활가전', '캠핑용품', '차량용품', '가젯'],
+    voicePreset: 'energetic-male',
+    dailyCount: 2,
+    audience: 'general',
   },
   {
     key: 'ig-beauty',
     platform: 'instagram',
     category: '뷰티·헬스',
     seedKeywords: ['뷰티기기', '헬스용품', '홈트', '마사지기'],
-    voicePreset: 'soft-female',
+    voicePreset: 'bright-male',
     dailyCount: 2,
-  },
-  {
-    key: 'tt-gadget',
-    platform: 'tiktok',
-    category: '가전·가젯',
-    seedKeywords: ['생활가전', '주방가전', '캠핑용품', '가젯'],
-    voicePreset: 'energetic-male',
-    dailyCount: 2,
+    audience: 'general',
   },
 ];
 
@@ -139,8 +165,11 @@ export function dailySlotCount(): number {
 /**
  * 플랫폼별로 몇 개의 레퍼런스를 수집할지.
  *
- * 샤오홍슈가 안티봇이 제일 강해서 자주 깨진다. 깨지면 S2가 부족분을
- * 나머지 플랫폼으로 자동 재배분한다 (s2-find-references.ts 참고).
+ * 샤오홍슈가 안티봇이 제일 강해서 자주 깨진다.
+ *
+ * 현재 제작 라인은 소싱 담당이 틱톡 인기순 하나로 상품과 레퍼런스를 동시에 물어오므로
+ * 이 할당량은 쓰이지 않는다. 다중 플랫폼 발굴을 되살릴 때를 위한 값으로 남겨둔다
+ * (`src/lib/scrapers/` 의 샤오홍슈·인스타 스크래퍼는 `src/probe.ts` 가 계속 점검한다).
  */
 export const REFERENCE_QUOTA: Record<ReferencePlatform, number> = {
   xiaohongshu: 2,

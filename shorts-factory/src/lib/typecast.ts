@@ -201,6 +201,13 @@ async function synthesizeViaBrowser(
 export interface NarrateOptions {
   presetKey: string;
   outDir: string;
+  /**
+   * 프리셋의 속도를 덮어쓴다.
+   *
+   * 타입캐스트 기본값은 쇼츠에 쓰기엔 느려서 시청자가 중간에 나간다.
+   * 1.2~1.3배 구간이 실전에서 검증된 값이다. 타겟 프로파일이 이 값을 준다.
+   */
+  speedOverride?: number;
   /** true 면 API를 건너뛰고 바로 브라우저 경로를 쓴다. */
   forceBrowser?: boolean;
 }
@@ -215,7 +222,10 @@ export async function narrate(
   texts: string[],
   opts: NarrateOptions,
 ): Promise<NarrationResult> {
-  const preset = voicePreset(opts.presetKey);
+  const base = voicePreset(opts.presetKey);
+  const preset: VoicePreset = opts.speedOverride
+    ? { ...base, speed: opts.speedOverride }
+    : base;
   await mkdir(opts.outDir, { recursive: true });
 
   let mode: 'api' | 'browser' = opts.forceBrowser ? 'browser' : 'api';
