@@ -12,7 +12,8 @@
     "team": "tsx src/stage.ts team",
     "stage": "tsx src/stage.ts",
     "probe": "tsx src/probe.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "capture": "tsx src/capture-session.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
