@@ -167,7 +167,9 @@ create table narrations (
 -- ---------------------------------------------------------------------------
 
 create type channel_platform as enum ('youtube', 'naverclip', 'instagram', 'tiktok');
-create type link_mode as enum ('inpock', 'yt_shopping_tag', 'naver_sticker');
+-- tiktok_shop: 사업자 인증을 마치면 팔로워 0명부터 열린다.
+-- lib/affiliate.ts 의 LinkMode 와 값이 정확히 일치해야 한다.
+create type link_mode as enum ('inpock', 'yt_shopping_tag', 'naver_sticker', 'tiktok_shop');
 
 create table channels (
   id                uuid primary key default gen_random_uuid(),
@@ -301,3 +303,30 @@ join products p     on p.id = s.product_id
 join merchants mc   on mc.id = p.merchant_id
 left join metrics m on m.upload_id = u.id
 group by 1;
+
+-- ---------------------------------------------------------------------------
+-- 접근 제어
+-- ---------------------------------------------------------------------------
+
+-- 이 테이블들은 파이프라인(서비스 롤)만 읽고 쓴다. 서비스 롤은 RLS 를 통과하므로
+-- 정책을 하나도 두지 않는 것이 곧 "그 외 전부 차단" 이 된다.
+--
+-- 켜두지 않으면 공개 키(anon)를 가진 누구나 상품 선정 근거, 대본, 수익 지표를
+-- 읽을 수 있다. 이 프로젝트는 결제 앱과 DB 를 공유하므로 특히 느슨하게 두면 안 된다.
+alter table runs        enable row level security;
+alter table merchants   enable row level security;
+alter table products    enable row level security;
+alter table "references" enable row level security;
+alter table blueprints  enable row level security;
+alter table assets      enable row level security;
+alter table scripts     enable row level security;
+alter table narrations  enable row level security;
+alter table channels    enable row level security;
+alter table renders     enable row level security;
+alter table uploads     enable row level security;
+alter table metrics     enable row level security;
+
+-- 뷰는 정의한 사람의 권한이 아니라 조회하는 사람의 권한으로 돌게 한다.
+-- 그래야 아래 테이블의 RLS 가 뷰를 통해 우회되지 않는다.
+alter view blueprint_performance     set (security_invoker = on);
+alter view cookie_window_performance set (security_invoker = on);
