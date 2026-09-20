@@ -112,6 +112,14 @@ jobs:
         working-directory: shorts-factory
         run: npx tsx src/probe-search.ts 洗车液
 
+      # 중국 내수 플랫폼 검색이 데이터센터 IP 에서 전부 벽이라는 게 실측으로 나왔다
+      # (샤오홍슈 로그인 벽 / 1688 슬라이더 캡차 / m.1688 로그인). 알리익스프레스는
+      # 해외向 이라 사정이 다를 수 있다. 검색·상세·영상유무를 한 번에 잰다.
+      - name: 알리익스프레스 소재 공급 가능 여부
+        if: always()
+        working-directory: shorts-factory
+        run: npx tsx src/probe-ali.ts "car wash snow foam"
+
       # 벤치마킹 대상을 추측하지 않고 잰다. 개발 컨테이너는 틱톡·인스타·유튜브가
       # 전부 egress 에 막혀 있어서 여기서만 숫자를 얻을 수 있다.
       - name: 홈스토리 계정 계측
