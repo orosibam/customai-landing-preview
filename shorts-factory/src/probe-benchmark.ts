@@ -1,5 +1,5 @@
 import { writeFile, mkdir } from 'node:fs/promises';
-import { chromium } from 'playwright';
+import { chromium, type Page } from 'playwright';
 
 /**
  * 벤치마킹 대상 계정을 **실제로 재는** 도구.
@@ -183,12 +183,21 @@ async function main(): Promise<void> {
       });
   });
 
+  let bioLink: string | null = null;
+  let products: BioProduct[] = [];
+
   try {
     await page.goto(`https://www.tiktok.com/@${HANDLE}`, {
       waitUntil: 'domcontentloaded',
       timeout: 60_000,
     });
     await page.waitForTimeout(5_000);
+
+    // 프로필 머리말은 로그인 없이 보인다. 여기서 링크인바이오 주소를 줍는다 —
+    // 게시물 목록이 막혀도 이건 남는다.
+    const header = await page.locator('body').innerText().catch(() => '');
+    bioLink = findBioLink(header);
+    console.log(`  링크인바이오: ${bioLink ?? '(프로필에서 못 찾음)'}`);
 
     for (let i = 0; i < SCROLL_ROUNDS; i++) {
       await page.mouse.wheel(0, 2_000);
@@ -198,14 +207,18 @@ async function main(): Promise<void> {
     console.log('');
 
     if (byId.size === 0) {
-      // 0건을 성공으로 넘기지 않는다. 무엇이 보였는지 남겨야 다음 수를 정할 수 있다.
-      const visible = await page.locator('body').innerText().catch(() => '');
-      console.log(`\n  화면에 보인 것(앞 300자): ${visible.replace(/\s+/g, ' ').slice(0, 300)}`);
-      throw new Error(
-        `@${HANDLE} 에서 게시물을 한 건도 못 받았습니다. ` +
-          `프로필이 비공개이거나, 틱톡이 이 요청을 캡차로 돌렸거나, ` +
-          `item_list 엔드포인트 경로가 바뀐 것입니다.`,
+      // 0건을 성공으로 위장하지 않는다. 다만 여기서 끝내지도 않는다 —
+      // 링크 페이지는 아직 안 봤고, 거기가 오히려 더 직접적인 자료다.
+      console.log(
+        `\n  ⚠ 게시물 0건. 틱톡이 로그인 없이는 목록(item_list)을 안 내줍니다.\n` +
+          `    화면에 보인 것(앞 240자): ${header.replace(/\s+/g, ' ').slice(0, 240)}`,
       );
+    }
+
+    // ── 링크인바이오 = 이 계정이 실제로 파는 제품 목록 ──────────────
+    // 영상보다 이쪽이 직접적이다. 무엇을 밀어서 돈이 되는지가 그대로 나열돼 있다.
+    if (bioLink) {
+      products = await readBioPage(page, bioLink);
     }
   } finally {
     await ctx.close();
@@ -213,12 +226,108 @@ async function main(): Promise<void> {
   }
 
   const posts = [...byId.values()];
-  report(posts);
+  if (posts.length) report(posts);
+  if (products.length) reportProducts(products);
 
   await mkdir(OUT_DIR, { recursive: true });
   const out = `${OUT_DIR}/benchmark-${HANDLE}.json`;
-  await writeFile(out, JSON.stringify({ handle: HANDLE, capturedAt: new Date().toISOString(), posts }, null, 2));
-  console.log(`\n원본 ${posts.length}건 → ${out}`);
+  await writeFile(
+    out,
+    JSON.stringify({ handle: HANDLE, capturedAt: new Date().toISOString(), bioLink, posts, products }, null, 2),
+  );
+  console.log(`\n게시물 ${posts.length}건 / 제품 ${products.length}건 → ${out}`);
+
+  if (posts.length === 0 && products.length === 0) {
+    throw new Error(
+      `@${HANDLE} 에서 게시물도 제품도 한 건도 못 얻었습니다. ` +
+        `틱톡이 로그인을 요구하고, 링크 페이지도 못 읽었습니다.`,
+    );
+  }
+}
+
+/** 링크인바이오 한 줄. */
+interface BioProduct {
+  label: string;
+  url: string;
+  /** 링크가 최종적으로 가리키는 쇼핑몰 (호스트로 판정) */
+  mall: string;
+}
+
+/** 프로필 본문에서 링크인바이오 주소를 줍는다. 한국 계정은 대개 이 셋 중 하나다. */
+function findBioLink(text: string): string | null {
+  const m = text.match(
+    /\b((?:moneying\.biz|inpock\.co\.kr|link\.inpock\.co\.kr|litt\.ly|linktr\.ee|lnk\.bio|bio\.link|[\w-]+\.(?:im|me))\/[^\s"')]+)/i,
+  );
+  return m ? `https://${m[1]!.replace(/^https?:\/\//, '')}` : null;
+}
+
+/** 호스트만 보고 어느 몰인지 붙인다. 모르는 곳은 호스트 그대로 남긴다. */
+function mallOf(url: string): string {
+  try {
+    const h = new URL(url).host.replace(/^www\./, '');
+    if (h.includes('coupang')) return '쿠팡';
+    if (h.includes('aliexpress')) return '알리';
+    if (h.includes('naver') || h.includes('smartstore')) return '네이버';
+    if (h.includes('tenping')) return '텐핑';
+    if (h.includes('11st')) return '11번가';
+    if (h.includes('gmarket')) return 'G마켓';
+    if (h.includes('ohou')) return '오늘의집';
+    return h;
+  } catch {
+    return '(파싱 불가)';
+  }
+}
+
+async function readBioPage(page: Page, url: string): Promise<BioProduct[]> {
+  console.log(`\n── 링크인바이오 ─────────────────────────────`);
+  console.log(`   ${url}`);
+
+  const res = await page
+    .goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+    .catch((e: Error) => {
+      console.log(`   ✗ 못 열었습니다: ${e.message.split('\n')[0]}`);
+      return null;
+    });
+  if (!res) return [];
+
+  await page.waitForTimeout(5_000);
+  console.log(`   HTTP ${res.status()}`);
+
+  // 링크 페이지는 대체로 <a> 목록이다. 버튼 라벨이 곧 제품명이다.
+  const rows: { url: string; label: string }[] = await page.$$eval('a[href]', (ns) =>
+    ns.map((n) => ({
+      url: (n as HTMLAnchorElement).href,
+      label: (n.textContent ?? '').replace(/\s+/g, ' ').trim(),
+    })),
+  );
+
+  const seen = new Set<string>();
+  const out: BioProduct[] = [];
+  for (const r of rows) {
+    if (!r.url.startsWith('http')) continue;
+    if (seen.has(r.url)) continue;
+    seen.add(r.url);
+    out.push({ label: r.label.slice(0, 120), url: r.url, mall: mallOf(r.url) });
+  }
+  return out;
+}
+
+function reportProducts(products: BioProduct[]): void {
+  console.log(`\n═══ 링크인바이오 제품 ${products.length}건 ═══`);
+
+  // 어느 몰로 보내는지가 곧 이 계정의 수익 구조다.
+  const byMall = new Map<string, number>();
+  for (const p of products) byMall.set(p.mall, (byMall.get(p.mall) ?? 0) + 1);
+  console.log(`\n몰별 분포:`);
+  for (const [mall, n] of [...byMall].sort((a, b) => b[1] - a[1])) {
+    console.log(`  ${mall.padEnd(24)} ${n}건`);
+  }
+
+  console.log(`\n제품 목록 (라벨 = 이 계정이 붙인 제품명):`);
+  for (const p of products) {
+    if (!p.label) continue;
+    console.log(`  [${p.mall}] ${p.label}`);
+  }
 }
 
 main().catch((e: Error) => {
