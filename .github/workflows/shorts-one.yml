@@ -1,0 +1,87 @@
+name: 쇼츠 한 편 제작
+
+# 하루치 8편을 돌리기 전에 **한 편이 끝까지 가는지** 본다.
+# 8개를 동시에 돌리면 어느 단계가 왜 막혔는지 로그가 섞여 안 보이고,
+# 막히는 곳이 있으면 LLM 비용을 8배로 태우고 나서 알게 된다.
+#
+# 배포는 하지 않는다. 승인 게이트는 그대로다 — 완성본을 아티팩트로 내려받아 눈으로 본다.
+on:
+  push:
+    branches:
+      - 'claude/**'
+    paths:
+      - 'shorts-factory/src/team/**'
+      - 'shorts-factory/src/stage.ts'
+      - '.github/workflows/shorts-one.yml'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: '채널 키 (tt-living / tt-kitchen / naver-living / yt-gadget)'
+        default: 'yt-gadget'
+
+concurrency:
+  # 겹쳐 돌면 같은 상품을 두 번 집고 LLM 비용만 두 배가 된다.
+  group: shorts-one-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  one:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: shorts-factory/package-lock.json
+
+      # ubuntu-latest 에 ffmpeg 는 없다(실측: spawn ffmpeg ENOENT).
+      - name: ffmpeg 설치
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -version | head -1
+
+      - name: 의존성 설치
+        working-directory: shorts-factory
+        run: npm ci
+
+      # 발굴(인스타)·가용성(다나와)·소재(알리) 셋 다 브라우저를 쓴다.
+      - name: Playwright 브라우저 설치
+        working-directory: shorts-factory
+        run: npx playwright install --with-deps chromium
+
+      # 네트워크 없이 도는 것부터. 여기서 깨지면 아래를 볼 필요가 없고 LLM 비용도 안 쓴다.
+      - name: 발음 정규화 테스트
+        working-directory: shorts-factory
+        run: npx tsx src/lib/korean.test.ts
+
+      - name: 한 편 제작
+        working-directory: shorts-factory
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TYPECAST_API_TOKEN: ${{ secrets.TYPECAST_API_TOKEN }}
+          # 인스타 발굴은 비로그인이 더 잘 된다(실측). 세션은 경로가 바뀔 때를 위한 폴백이다.
+          INSTAGRAM_STORAGE_STATE: ${{ secrets.INSTAGRAM_STORAGE_STATE }}
+          MIRROR_FOOTAGE: ${{ vars.MIRROR_FOOTAGE }}
+          ZOOM_FOOTAGE: ${{ vars.ZOOM_FOOTAGE }}
+        run: npx tsx src/stage.ts one --channel=${{ inputs.channel || 'yt-gadget' }}
+
+      # 완성본과 중간 산출물을 받아 눈으로 본다. 실패해도 올린다 —
+      # 어디까지 갔는지가 다음 수를 정한다.
+      - name: 결과물 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shorts-one-${{ github.run_id }}
+          path: |
+            shorts-factory/*.mp4
+            shorts-factory/out/**
+            shorts-factory/*.log
+          if-no-files-found: ignore
+          retention-days: 14

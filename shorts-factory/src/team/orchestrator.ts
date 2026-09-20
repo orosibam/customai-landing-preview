@@ -2,6 +2,8 @@ import { CHANNELS, dailySlotCount } from '../config.js';
 import { audienceFor, PLATFORM_DEFAULT_AUDIENCE, type AudienceKey } from '../lib/audience.js';
 import { closeBrowser } from '../lib/browser.js';
 import { estimateCostUsd } from '../lib/llm.js';
+import { mkdir } from 'node:fs/promises';
+import { downloadFile } from '../lib/storage.js';
 import { db, logStage, openRun } from '../lib/supabase.js';
 import { PRODUCTION_LINE } from './index.js';
 import { HandoffError, type Brief } from './types.js';
@@ -107,8 +109,25 @@ export async function runOne(channelKey?: string): Promise<SlotOutcome> {
       })
       .eq('id', runId);
 
+    // 완성본은 Supabase 스토리지에만 올라간다. 한 편 모드에서는 눈으로 봐야 하므로
+    // 로컬에도 떨군다 — Actions 아티팩트로 받아 재생하려면 파일이 작업 폴더에 있어야 한다.
+    let localCopy = '';
+    if (done.render?.storagePath) {
+      localCopy = `out/${(done.product?.titleKo ?? 'shorts').replace(/[^\w가-힣]+/g, '-')}.mp4`;
+      try {
+        await mkdir('out', { recursive: true });
+        await downloadFile(done.render.storagePath, localCopy);
+      } catch (e) {
+        // 내려받기 실패가 제작 실패는 아니다. 다만 조용히 넘기면 아티팩트가 빈 채로
+        // 올라가고 "영상이 안 나왔다" 로 오해하게 된다.
+        console.warn(`완성본을 로컬로 못 받았습니다: ${(e as Error).message}`);
+        localCopy = '';
+      }
+    }
+
     console.log(`\n=== 완성: ${done.product?.titleKo} ===`);
     console.log(`실행 id: ${runId}`);
+    if (localCopy) console.log(`파일: ${localCopy} (${done.render?.durationSec.toFixed(1)}초)`);
     for (const n of done.notes) {
       console.log(`  [${n.from}] ${n.message}`);
       if (n.caveat) console.log(`      주의: ${n.caveat}`);

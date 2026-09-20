@@ -81,14 +81,27 @@ async function videoIds(page: Page): Promise<{ id: string; title: string }[]> {
   });
   await page.waitForTimeout(5_000);
 
-  const html = await page.content();
+  // HTML 정규식으로 videoId 를 긁으려다 0건이었다. 렌더된 DOM 에서 링크를 읽는 게
+  // 훨씬 단순하고 튼튼하다 — 유튜브가 내부 JSON 모양을 바꿔도 a[href] 는 남는다.
+  const rows: { id: string; title: string }[] = await page.$$eval(
+    'a[href*="/shorts/"]',
+    (ns) =>
+      ns.map((n) => {
+        const href = (n as HTMLAnchorElement).getAttribute('href') ?? '';
+        const id = href.split('/shorts/')[1]?.split(/[?&/]/)[0] ?? '';
+        // 제목은 링크 자신이거나 카드 안의 제목 요소에 있다.
+        const title =
+          (n.getAttribute('title') || n.textContent || '').replace(/\s+/g, ' ').trim();
+        return { id, title };
+      }),
+  );
+
   const seen = new Set<string>();
   const out: { id: string; title: string }[] = [];
-  for (const m of html.matchAll(/"videoId":"([\w-]{11})"[^}]*?"text":"(.*?)"/g)) {
-    const id = m[1]!;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push({ id, title: m[2]!.replace(/\\u[\dA-Fa-f]{4}/g, (s) => JSON.parse(`"${s}"`)) });
+  for (const r of rows) {
+    if (!r.id || seen.has(r.id)) continue;
+    seen.add(r.id);
+    out.push({ id: r.id, title: r.title || '(제목 없음)' });
     if (out.length >= LIMIT) break;
   }
   return out;
