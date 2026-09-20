@@ -23,7 +23,7 @@
 
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { chromium } from 'playwright';
+import { chromium, type Page } from 'playwright';
 import { createInterface } from 'node:readline/promises';
 
 interface Target {
@@ -96,6 +96,66 @@ const TARGETS: Target[] = [
 
 const OUT_DIR = '.sessions';
 
+/** 로그인을 기다리는 최대 시간. QR 스캔·SMS 인증에 넉넉해야 한다. */
+const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * 로그인될 때까지 기다린다.
+ *
+ * 예전엔 사람이 터미널로 돌아와 Enter 를 눌러야 저장했다. 실제로 그 단계에서
+ * 사고가 났다 — 브라우저에서 로그인은 끝냈는데 Enter 를 안 눌러 창만 닫히고
+ * 아무것도 저장되지 않았다. 나중에 수확을 돌릴 때가 되어서야 "세션이 없다" 로
+ * 드러난다.
+ *
+ * 사람이 기억해야 할 단계를 없앤다. 로그인 흔적이 보이면 바로 저장한다.
+ * Enter 는 남겨두되 "지금 바로 확인해라" 는 뜻으로만 쓴다.
+ */
+async function waitForLogin(page: Page, target: Target): Promise<boolean> {
+  const startedAt = Date.now();
+  let lastNotice = 0;
+
+  // Enter 를 누르면 기다리지 않고 즉시 한 번 더 본다. 안 눌러도 상관없다.
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  let nudged = false;
+  rl.question('  (로그인이 끝났는데 감지가 안 되면 Enter) ').then(() => { nudged = true; }).catch(() => {});
+
+  try {
+    while (Date.now() - startedAt < LOGIN_TIMEOUT_MS) {
+      const found = await page
+        .locator(target.loggedInSelector)
+        .first()
+        .isVisible()
+        .catch(() => false);
+      if (found) return true;
+
+      // 창을 닫아버린 경우. 계속 기다려봐야 소용없다.
+      if (page.isClosed()) {
+        console.log('\n  창이 닫혔습니다. 저장하지 못했습니다.');
+        return false;
+      }
+
+      const waited = Math.floor((Date.now() - startedAt) / 1000);
+      if (waited - lastNotice >= 30) {
+        lastNotice = waited;
+        console.log(`  ... ${waited}초째 기다리는 중 (로그인되면 자동으로 넘어갑니다)`);
+      }
+
+      if (nudged) {
+        nudged = false;
+        // 확인 화면으로 한 번 보내본다. 로그인 직후 리디렉션이 안 된 경우가 있다.
+        await page.goto(target.verifyUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      }
+
+      await new Promise((r) => setTimeout(r, 2_000));
+    }
+  } finally {
+    rl.close();
+  }
+
+  console.log('\n  10분 동안 로그인이 감지되지 않았습니다.');
+  return false;
+}
+
 async function capture(target: Target): Promise<boolean> {
   console.log(`\n${'─'.repeat(60)}`);
   console.log(`  ${target.label} 로그인`);
@@ -110,25 +170,12 @@ async function capture(target: Target): Promise<boolean> {
   await page.goto(target.loginUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
 
   console.log('\n  창이 열렸습니다. 평소처럼 로그인하세요.');
-  console.log('  (SMS 인증, 캡차 전부 정상적으로 하시면 됩니다)');
-  console.log('\n  로그인이 끝나면 여기로 돌아와 Enter 를 누르세요.');
+  console.log('  (SMS 인증, QR 스캔, 캡차 전부 정상적으로 하시면 됩니다)');
+  console.log('\n  로그인이 감지되면 자동으로 저장하고 창을 닫습니다.');
+  console.log('  터미널로 돌아오실 필요 없습니다. 그냥 로그인만 끝내세요.\n');
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  await rl.question('  > ');
-  rl.close();
-
-  // 사람이 "됐다" 고 해도 실제로 됐는지는 확인해야 한다.
-  // 여기서 잘못 저장하면 나중에 파이프라인이 한밤중에 조용히 실패한다.
-  console.log('\n  로그인 상태 확인 중...');
-  await page.goto(target.verifyUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
-
-  let ok = false;
-  try {
-    await page.waitForSelector(target.loggedInSelector, { timeout: 10_000 });
-    ok = true;
-  } catch {
-    ok = false;
-  }
+  const ok = await waitForLogin(page, target);
+  console.log('');
 
   if (!ok) {
     console.log(`\n  ✗ 로그인이 확인되지 않았습니다.`);
@@ -148,16 +195,14 @@ async function capture(target: Target): Promise<boolean> {
   await browser.close();
 
   console.log(`\n  ✓ 저장했습니다 (쿠키 ${cookieCount}개) → ${outPath}`);
-  // 바로 다음에 할 일은 대개 로컬 실행이다. Secrets 안내만 하면 "넣었는데 왜 안 되지" 가 된다.
-  console.log(`\n  이 컴퓨터에서 바로 쓰려면 — shorts-factory/.env 에 한 줄 추가:`);
-  console.log(`\n    ${target.secretName}=<${outPath} 파일 내용 전체>`);
-  console.log(`\n  파일 내용을 클립보드로 복사하는 법:`);
+  // 이 컴퓨터에서는 코드가 이 파일을 직접 읽는다. 복사 단계를 만들지 않는다.
+  console.log(`\n  이 컴퓨터에서는 바로 쓸 수 있습니다. 옮길 필요 없습니다.`);
+  console.log(`\n  다음 단계:  npm run links harvest ${target.key === 'ali' ? 'ali' : target.key} <검색어>`);
+  console.log(`\n  매일 자동 실행(GitHub Actions)에도 쓰려면 이 파일 내용을`);
+  console.log(`  저장소 Settings → Secrets and variables → Actions 의`);
+  console.log(`  ${target.secretName} 에 넣으세요. 복사 명령:`);
   console.log(`    macOS:   cat ${outPath} | pbcopy`);
   console.log(`    Windows: type ${outPath.replace(/\//g, '\\')} | clip`);
-  console.log(`    Linux:   cat ${outPath} | xclip -selection clipboard`);
-  console.log(`\n  매일 자동 실행(GitHub Actions)에도 쓰려면 같은 값을`);
-  console.log(`  저장소 Settings → Secrets and variables → Actions 에`);
-  console.log(`  ${target.secretName} 이름으로 넣으세요.`);
 
   return true;
 }
