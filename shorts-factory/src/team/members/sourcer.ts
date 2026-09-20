@@ -6,7 +6,7 @@ import { downloadTikTokVideo, findOverseasFootage } from '../../lib/scrapers/tik
 import { collectClips, downloadClip } from '../../lib/scrapers/aliexpress.js';
 import { collect1688Clips, collectTaobaoClips, downloadCnClip } from '../../lib/scrapers/cn-footage.js';
 import { searchPlan } from '../../lib/scrapers/keywords.js';
-import { markFailed, markUsed, takeVideoLinks } from '../../lib/scrapers/linkstore.js';
+import { markFailed, takeVideoLinks } from '../../lib/scrapers/linkstore.js';
 import { downloadVideo } from '../../lib/scrapers/cn-bridge.js';
 import { probe } from '../../lib/ffmpeg.js';
 import { uploadFile } from '../../lib/storage.js';
@@ -168,7 +168,9 @@ export const sourcer: TeamMember = {
             if (item.linkId) await bookkeep(() => markFailed(item.linkId!, (e as Error).message));
             throw e;
           }
-          if (item.linkId) await bookkeep(() => markUsed(item.linkId!));
+          // 여기서 "썼다" 를 찍지 않는다. 영상이 실제로 나온 뒤에 찍는다
+          // (orchestrator.runOne). 다운로드 직후에 찍었더니 뒤 단계에서 죽은
+          // 실행이 사람이 20분 들여 모아온 재고를 통째로 태웠다.
         },
       },
       {
@@ -318,6 +320,7 @@ export const sourcer: TeamMember = {
     const assetIds: string[] = [];
     const keptPaths: string[] = [];
     const keptUrls: string[] = [];
+    const keptLinkIds: string[] = [];
 
     for (const [i, entry] of pool.entries()) {
       const info = await probe(entry.path);
@@ -347,6 +350,7 @@ export const sourcer: TeamMember = {
       assetIds.push((row as { id: string }).id);
       keptPaths.push(entry.path);
       keptUrls.push(entry.item.productUrl);
+      if (entry.item.linkId) keptLinkIds.push(entry.item.linkId);
     }
 
     const keptProducts = new Set(keptUrls).size;
@@ -368,7 +372,13 @@ export const sourcer: TeamMember = {
     return withNote(
       {
         ...brief,
-        footage: { assetIds, localPaths: keptPaths, sourceUrls: keptUrls, triedKeywords },
+        footage: {
+          assetIds,
+          localPaths: keptPaths,
+          sourceUrls: keptUrls,
+          triedKeywords,
+          harvestedLinkIds: keptLinkIds,
+        },
       },
       'sourcer',
       `소재 ${assetIds.length}개 확보 (${route}). 검색어 "${triedKeywords.join(' → ')}"`,

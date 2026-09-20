@@ -124,6 +124,14 @@ export interface Brief {
     localPaths: string[];
     sourceUrls: string[];
     triedKeywords: string[];
+    /**
+     * 이번에 쓴 수확 소재 행들.
+     *
+     * "썼다" 표시는 **영상이 실제로 나온 뒤에** 찍는다. 다운로드 직후에 찍었더니,
+     * 뒤 단계에서 죽은 실행이 사람이 20분 들여 모아온 재고를 통째로 태웠다
+     * (19차가 ⑥ 성우에서 죽으면서 12개를 전부 소진시켰다).
+     */
+    harvestedLinkIds: string[];
   };
 
   /** 구조 분석가의 산출물 */

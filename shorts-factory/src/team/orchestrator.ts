@@ -5,6 +5,7 @@ import { estimateCostUsd } from '../lib/llm.js';
 import { mkdir } from 'node:fs/promises';
 import { downloadFile } from '../lib/storage.js';
 import { db, logStage, openRun } from '../lib/supabase.js';
+import { markUsed } from '../lib/scrapers/linkstore.js';
 import { PRODUCTION_LINE } from './index.js';
 import { HandoffError, type Brief, type TeamMember } from './types.js';
 
@@ -204,6 +205,23 @@ export async function runOne(channelKey?: string, pinnedProduct?: string): Promi
 
   try {
     const done = await runLine(brief, label);
+
+    // 수확 소재에 "썼다" 를 **여기서** 찍는다.
+    //
+    // 다운로드 직후에 찍었더니, 뒤 단계에서 죽은 실행이 사람이 20분 들여 모아온
+    // 재고를 통째로 태웠다 — 19차가 ⑥ 성우에서 죽으면서 12개를 전부 소진시켰고,
+    // 다음 실행은 재고 0으로 시작해 알리를 헛되이 훑었다.
+    //
+    // "썼다" 는 **영상이 나왔다** 는 뜻이어야 한다. 실패한 실험이 남의 노동을
+    // 태우면 안 된다.
+    for (const id of done.footage?.harvestedLinkIds ?? []) {
+      try {
+        await markUsed(id);
+      } catch (e) {
+        console.warn(`수확 장부 기록 실패(영상은 정상): ${(e as Error).message}`);
+      }
+    }
+
     await db()
       .from('runs')
       .update({
