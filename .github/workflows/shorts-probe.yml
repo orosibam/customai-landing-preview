@@ -139,23 +139,25 @@ jobs:
 
       # 제휴사 매칭(②)의 첫 동작이 "이 제품이 쿠팡에 있나" 다. 1688 에서 열릴 거라
       # 가정하고 파이프라인을 얹었다가 캡차 벽인 걸 뒤늦게 안 실수를 반복하지 않는다.
-      - name: 쿠팡 검색 (제휴사 매칭 1단계)
+      # 쿠팡은 러너에서 HTTP 403 Access Denied 다 (Akamai, 실측). 데이터센터 IP 차단이라
+      # 요청을 바꿔서 될 일이 아니다. ② 는 "한국에서 파나 · 얼마인가" 만 답하면 되고
+      # 그건 열려 있는 아무 몰에서나 확인된다. 어디가 열리는지 재서 고른다.
+      - name: 한국 쇼핑몰 검색 경로 찾기 (제휴사 매칭 1단계)
         if: always()
         working-directory: shorts-factory
-        run: npx tsx src/probe-coupang.ts "차량용 팔걸이"
+        run: npx tsx src/probe-korshop.ts "차량용 팔걸이"
 
       # 베낄 것은 제품이 아니라 파는 방식이다 — 첫 문장 문형, 말투, 소구 순서, CTA 위치.
       # 틱톡·인스타는 로그인 벽이라 게시물을 못 본다. 유튜브 쇼츠는 공개이고
       # 자동 자막이 붙어서 나레이션 전문을 타임스탬프째로 받을 수 있다.
       # 같은 이름의 채널이 여럿이라 후보를 둘 다 열어 채널 소개로 판별한다.
-      - name: 홈스토리 나레이션 (유튜브 자막)
+      # yt-dlp 판은 러너에서 막혔다 — 6건 전부 「로그인하여 봇이 아님을 확인하세요」.
+      # 같은 러너에서 진짜 브라우저는 통한다(인스타·알리가 그렇게 열렸다).
+      # 그래서 브라우저로 시청 페이지를 열고 자막 주소를 읽어 그대로 받는다.
+      - name: 홈스토리 나레이션 (브라우저)
         if: always()
         working-directory: shorts-factory
-        run: |
-          for h in @Homestory_official @homestorytv; do
-            echo "########## $h ##########"
-            python3 scrapers-py/voice_probe.py "$h" --limit 6 || echo "  ($h 실패 — 다음 후보로)"
-          done
+        run: npx tsx src/probe-narration.ts @Homestory_official 5
 
       - name: 계측 원본 업로드
         if: always()

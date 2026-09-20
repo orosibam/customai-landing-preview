@@ -1,5 +1,6 @@
 import { writeFile } from 'node:fs/promises';
-import { withContext, pause, SessionExpiredError } from '../browser.js';
+import { withContext, pause } from '../browser.js';
+import type { Page } from 'playwright';
 import { optionalEnv } from '../../config.js';
 import { parseCount } from './types.js';
 import type { HotVideo } from './tiktok-discovery.js';
@@ -58,18 +59,20 @@ export function tagsForCategory(category: string): string[] {
   return IG_SEED_TAGS;
 }
 
-function requireSession(): string {
-  const state = optionalEnv('INSTAGRAM_STORAGE_STATE', '');
-  if (!state) {
-    throw new SessionExpiredError(
-      '인스타그램',
-      '해시태그 탐색은 로그인 세션이 있어야 결과가 보입니다. ' +
-        'npm run capture instagram 으로 한 번 로그인한 뒤 ' +
-        '.sessions/instagram.json 을 INSTAGRAM_STORAGE_STATE 에 넣으세요.',
-    );
-  }
-  return state;
-}
+/**
+ * 해시태그 경로 후보. 순서가 곧 우선순위다.
+ *
+ * 실측(2026-09-20, 러너)에서 **비로그인이 더 잘 된다.**
+ *   · 비로그인 → /explore/tags/<tag>/ 가 /popular/<tag>/ 로 넘어가며 릴스 12개
+ *   · 세션 있음 → /explore/search/keyword/ 로 넘어가며 릴스 0개
+ *
+ * 세션을 넣으면 인스타가 개인화된 검색 화면을 주는데 거기엔 릴스 그리드가 없다.
+ * 그래서 세션을 필수로 요구하던 걸 뒤집었다 — 그대로 뒀으면 0건이 나왔다.
+ */
+const TAG_ROUTES = [
+  (t: string) => `https://www.instagram.com/explore/tags/${encodeURIComponent(t)}/`,
+  (t: string) => `https://www.instagram.com/popular/${encodeURIComponent(t)}/`,
+];
 
 /**
  * 해시태그 하나에서 릴스를 모은다.
@@ -83,27 +86,58 @@ export async function discoverHotVideos(
 ): Promise<HotVideo[]> {
   const limit = opts.limit ?? 12;
   const minViews = opts.minViews ?? 0;
-  const storageState = requireSession();
 
-  return withContext({ storageState, locale: 'en-US', timezone: 'America/Los_Angeles' }, async (ctx) => {
-    const page = await ctx.newPage();
+  // 비로그인을 먼저 쓴다(실측에서 이쪽이 된다). 0건일 때만 세션으로 한 번 더 본다 —
+  // 인스타가 경로를 또 바꿀 수 있으니 붙어 있는 세션을 버리지는 않는다.
+  const state = optionalEnv('INSTAGRAM_STORAGE_STATE', '');
+  const attempts: { label: string; storageState?: string }[] = [{ label: '비로그인' }];
+  if (state) attempts.push({ label: '세션', storageState: state });
 
-    await page.goto(`https://www.instagram.com/explore/tags/${encodeURIComponent(tag)}/`, {
-      waitUntil: 'domcontentloaded',
-      timeout: 45_000,
-    });
+  const problems: string[] = [];
+
+  for (const attempt of attempts) {
+    const found = await withContext(
+      {
+        ...(attempt.storageState ? { storageState: attempt.storageState } : {}),
+        locale: 'en-US',
+        timezone: 'America/Los_Angeles',
+      },
+      async (ctx) => collectFromTag(await ctx.newPage(), tag, limit, minViews, problems, attempt.label),
+    );
+    if (found.length > 0) {
+      console.log(`#${tag}: ${attempt.label} 으로 릴스 ${found.length}건`);
+      return found;
+    }
+  }
+
+  // 0건을 성공으로 넘기지 않는다. 발굴이 0이면 뒤가 전부 이유 없이 멈춘다.
+  throw new Error(
+    `#${tag} 에서 릴스를 한 건도 못 찾았습니다 (${attempts.map((a) => a.label).join(', ')} 모두).\n` +
+      problems.map((p) => `   ${p}`).join('\n'),
+  );
+}
+
+/** 경로 후보를 순서대로 열어 릴스를 모은다. */
+async function collectFromTag(
+  page: Page,
+  tag: string,
+  limit: number,
+  minViews: number,
+  problems: string[],
+  label: string,
+): Promise<HotVideo[]> {
+  const hrefs: string[] = [];
+
+  for (const route of TAG_ROUTES) {
+    await page.goto(route(tag), { waitUntil: 'domcontentloaded', timeout: 45_000 }).catch(() => {});
     await pause(3_000, 5_000);
 
     if (page.url().includes('/accounts/login')) {
-      throw new SessionExpiredError(
-        '인스타그램',
-        '저장된 세션으로 해시태그 페이지를 열었는데 로그인으로 튕겼습니다. ' +
-          'npm run capture instagram 으로 세션을 다시 뜨세요.',
-      );
+      problems.push(`${label}: 로그인 화면으로 튕겼습니다 (${route(tag)})`);
+      continue;
     }
 
     // 릴스만 본다. 정지 이미지 게시물은 설계도 추출에 쓸 수 없다.
-    const hrefs: string[] = [];
     for (let round = 0; round < 4 && hrefs.length < limit * 2; round++) {
       const found = await page.$$eval('a[href*="/reel/"]', (ns) =>
         ns.map((n) => n.getAttribute('href') ?? '').filter(Boolean),
@@ -113,36 +147,28 @@ export async function discoverHotVideos(
       await pause(1_500, 2_500);
     }
 
-    if (hrefs.length === 0) {
-      // 0건을 성공으로 넘기지 않는다. 발굴이 0이면 뒤가 전부 이유 없이 멈춘다.
-      const visible = await page.locator('body').innerText().catch(() => '');
-      throw new Error(
-        `#${tag} 에서 릴스를 한 건도 못 찾았습니다. ` +
-          `해시태그가 비었거나 인스타가 이 세션에 결과를 안 주고 있습니다. ` +
-          `화면: ${visible.replace(/\s+/g, ' ').slice(0, 160)}`,
-      );
-    }
+    if (hrefs.length > 0) break;
 
-    const out: HotVideo[] = [];
-    for (const href of hrefs.slice(0, limit)) {
-      try {
-        const v = await readReel(page, href, tag);
-        if ((v.views ?? 0) >= minViews) out.push(v);
-        await pause(1_200, 2_400);
-      } catch (e) {
-        console.warn(`릴스 읽기 실패 (${href}): ${(e as Error).message}`);
-      }
-    }
+    const visible = await page.locator('body').innerText().catch(() => '');
+    problems.push(
+      `${label}: ${page.url()} 에서 릴스 0개 — ${visible.replace(/\s+/g, ' ').slice(0, 120)}`,
+    );
+  }
 
-    return out;
-  });
+  const out: HotVideo[] = [];
+  for (const href of hrefs.slice(0, limit)) {
+    try {
+      const v = await readReel(page, href, tag);
+      if ((v.views ?? 0) >= minViews) out.push(v);
+      await pause(1_200, 2_400);
+    } catch (e) {
+      console.warn(`릴스 읽기 실패 (${href}): ${(e as Error).message}`);
+    }
+  }
+  return out;
 }
 
-async function readReel(
-  page: import('playwright').Page,
-  href: string,
-  tag: string,
-): Promise<HotVideo> {
+async function readReel(page: Page, href: string, tag: string): Promise<HotVideo> {
   const url = `https://www.instagram.com${href}`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await pause(1_500, 2_500);
