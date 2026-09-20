@@ -111,3 +111,18 @@ jobs:
         if: always()
         working-directory: shorts-factory
         run: npx tsx src/probe-search.ts 洗车液
+
+      # 벤치마킹 대상을 추측하지 않고 잰다. 개발 컨테이너는 틱톡·인스타·유튜브가
+      # 전부 egress 에 막혀 있어서 여기서만 숫자를 얻을 수 있다.
+      - name: 홈스토리 계정 계측
+        if: always()
+        working-directory: shorts-factory
+        run: npx tsx src/probe-benchmark.ts homestory.official
+
+      - name: 계측 원본 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark
+          path: shorts-factory/.probe/
+          if-no-files-found: ignore
