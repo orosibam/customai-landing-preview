@@ -80,10 +80,30 @@ export const analyst: TeamMember = {
     const reference = brief.reference;
     if (!reference) throw new HandoffError('analyst', '레퍼런스가 넘어오지 않았습니다.');
 
+    let frameFailure = '';
     const images = await sampleFrames(reference.url).catch((e) => {
-      console.warn(`프레임 추출 실패, 캡션만으로 진행: ${(e as Error).message}`);
+      frameFailure = (e as Error).message;
+      console.warn(`프레임 추출 실패, 캡션만으로 진행: ${frameFailure}`);
       return [] as { base64: string; mediaType: 'image/jpeg' }[];
     });
+
+    // 프레임도 없고 캡션도 없으면 **원본에서 읽은 게 하나도 없다.**
+    //
+    // 그런데도 설계도는 나온다 — LLM 이 상품명만 보고 그럴듯하게 지어내기 때문이다.
+    // 그러면 "해외에서 터진 구조를 베낀다" 는 이 시스템의 전제가 조용히 사라진 채로
+    // 영상이 계속 나가고, 나중에 성과를 볼 때 "이 설계도가 먹혔다" 는 판단이
+    // 통째로 거짓이 된다.
+    //
+    // 멈추지는 않는다(영상 자체는 만들 수 있다). 대신 크게 적어 승인 화면까지
+    // 올려보낸다. 사람이 보고 판단할 몫이다.
+    const blind = images.length === 0 && !reference.caption?.trim();
+    if (blind) {
+      console.warn(
+        `⚠️  원본 릴스에서 읽은 것이 하나도 없습니다 (프레임 0장, 캡션 없음).\n` +
+          `   ${frameFailure || '(프레임 추출은 시도되지 않았습니다)'}\n` +
+          `   지금 만드는 설계도는 "터진 구조" 가 아니라 상품명만 보고 지어낸 것입니다.`,
+      );
+    }
 
     const { audience } = brief;
 
@@ -163,7 +183,12 @@ ${images.length > 0 ? `첨부 ${images.length}장은 영상에서 시간순으�
       `${parsed.hook_type} 훅 / 컷 ${cuts.length}개 / ` +
       `소구 [${(parsed.appeals ?? []).map((a) => a.point).join(' → ')}]. ` +
         `흐름: ${parsed.narrative_flow}`,
-      images.length === 0 ? '원본 영상을 못 받아 캡션만으로 추론했습니다. 정확도가 떨어집니다.' : undefined,
+      blind
+        ? '⚠️ 원본 릴스에서 읽은 것이 없습니다(프레임 0장·캡션 없음). 이 설계도는 ' +
+          '터진 구조를 베낀 게 아니라 상품명만 보고 지어낸 것입니다.'
+        : images.length === 0
+          ? '원본 영상을 못 받아 캡션만으로 추론했습니다. 정확도가 떨어집니다.'
+          : undefined,
     );
   },
 

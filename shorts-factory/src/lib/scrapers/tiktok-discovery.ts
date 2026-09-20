@@ -212,8 +212,26 @@ export async function downloadTikTokVideo(videoUrl: string, outPath: string): Pr
     throw new Error(`영상 주소를 찾지 못했습니다: ${videoUrl}`);
   }
 
+  // Referer 를 **열었던 페이지 기준으로** 만든다.
+  //
+  // 여기 틱톡 주소가 박혀 있었다. 이 함수는 구조 분석가가 **인스타 릴스**를 받을
+  // 때도 쓰는데(analyst.sampleFrames), 그때 인스타 CDN 에 틱톡 Referer 를 보내면
+  // 거절당한다. 1688 CDN 에서 같은 성질을 이미 확인했다 — 꼬리표가 안 맞으면
+  // 非法访问 로 돌려준다.
+  let referer = 'https://www.tiktok.com/';
+  try {
+    referer = new URL(videoUrl).origin + '/';
+  } catch {
+    // 주소를 못 읽으면 기본값으로 둔다. 여기서 던질 일은 아니다.
+  }
+
   const res = await fetch(mediaUrl, {
-    headers: { Referer: 'https://www.tiktok.com/', 'User-Agent': 'Mozilla/5.0' },
+    headers: {
+      Referer: referer,
+      'User-Agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+        '(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+    },
   });
   if (!res.ok) throw new Error(`영상 다운로드 실패 (${res.status}): ${videoUrl}`);
 
