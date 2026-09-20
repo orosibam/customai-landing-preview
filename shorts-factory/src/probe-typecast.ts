@@ -45,10 +45,10 @@ function shapeOf(value: unknown, depth = 0): unknown {
   return `<${typeof value}>`;
 }
 
+// 실측(2026-09-20): api.typecast.ai/v1 + X-API-KEY 조합만 200 이다.
+// 나머지는 404/401/403 이라 목록 확인용으로만 남긴다.
 const BASES = [
-  optionalEnv('TYPECAST_API_BASE', 'https://typecast.ai/api'),
-  'https://api.typecast.ai/v1',
-  'https://typecast.ai/api/v1',
+  optionalEnv('TYPECAST_API_BASE', 'https://api.typecast.ai/v1'),
 ];
 
 /** 액터(성우) 목록. 여기서 액터 ID 형식을 알 수 있다. */
@@ -141,8 +141,62 @@ async function main(): Promise<void> {
     console.log('   403 만 나왔다면 요금제에서 API 가 안 열린 것일 수 있습니다.');
   }
 
-  console.log('\n2) 합성 요청 — 응답에 오디오 URL과 길이가 오는지 확인합니다');
-  const actorId = optionalEnv('TYPECAST_PROBE_ACTOR', '');
+  // ── 2) 합성 ────────────────────────────────────────────────────────────
+  // 여기가 진짜 확인할 곳이다. 목록이 열렸다고 합성이 같은 모양인 건 아니다.
+  // 오디오가 응답 본문으로 바로 오는지, 아니면 URL 을 주고 폴링해야 하는지에 따라
+  // 어댑터 구조가 통째로 갈린다. 추측하지 말고 헤더까지 본다.
+  console.log('\n2) 합성 — 경로 후보를 때려보고 응답이 오디오인지 JSON인지 본다');
+
+  const SPEAK_PATHS = ['/text-to-speech', '/speak', '/tts'];
+  const voiceId = optionalEnv('TYPECAST_PROBE_ACTOR', 'tc_65a0e1eb23a607b9906c0154');
+
+  for (const base of BASES) {
+    for (const path of SPEAK_PATHS) {
+      const url = `${base}${path}`;
+      process.stdout.write(`  ${url.replace(/https?:\/\//, '').padEnd(40)} `);
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'X-API-KEY': token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            voice_id: voiceId,
+            text: '세차했는데도 광택이 금방 사라지죠?',
+            model: 'ssfm-v21',
+            language: 'kor',
+            output: { audio_format: 'wav' },
+          }),
+          signal: AbortSignal.timeout(60_000),
+        });
+
+        const ctype = res.headers.get('content-type') ?? '';
+        console.log(`${res.status}  ${ctype}`);
+
+        if (!res.ok) {
+          const t = await res.text();
+          console.log(`     본문(앞 200자): ${t.slice(0, 200)}`);
+          continue;
+        }
+
+        if (ctype.includes('audio') || ctype.includes('octet-stream')) {
+          const buf = await res.arrayBuffer();
+          console.log(`     ✅ 오디오가 본문으로 바로 옵니다 — ${buf.byteLength} 바이트`);
+          console.log('     응답 헤더 중 길이 정보를 줄 만한 것:');
+          res.headers.forEach((v, k) => {
+            if (/duration|length|audio|x-/i.test(k)) console.log(`       ${k}: ${v}`);
+          });
+        } else {
+          const body = await res.json().catch(() => null);
+          console.log('     JSON 응답 형태:');
+          console.log(`     ${JSON.stringify(shapeOf(body), null, 2).split('\n').join('\n     ')}`);
+        }
+      } catch (e) {
+        console.log(`실패 — ${(e as Error).message}`);
+      }
+    }
+  }
+
+  const skipOld = optionalEnv('__SKIP', '1');
+  const actorId = skipOld === 'never' ? optionalEnv('TYPECAST_PROBE_ACTOR', '') : '';
   if (!actorId) {
     console.log('  건너뜀 — 액터 ID가 필요합니다.');
     console.log('  위 1)에서 액터 ID를 하나 골라 다시 실행하세요:');
