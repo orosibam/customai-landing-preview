@@ -18,24 +18,53 @@ import { fail, HandoffError, withNote, type Brief, type ReviewResult, type TeamM
  * 하나를 오래 물고 있는 쪽이 오히려 끝까지 본다.
  */
 
-const CHARTER = `너는 숏폼 광고의 구조를 분해하는 분석가다.
+const CHARTER = `너는 숏폼 광고를 분해해 **다시 만들 수 있는 설계도**로 바꾸는 분석가다.
 
-**구조만** 뽑는다. 대사, 자막 문구, 등장 인물, 브랜드명, 구체적인 영상 내용은
-기록하지 않는다. 우리가 재현할 것은 "어떤 순서로 무엇을 보여주는가" 라는 골격이지
-그 영상 자체가 아니다.
+## 얼마나 자세히 베끼는가
 
-shot 필드는 화면 유형을 일반적인 말로 적는다.
-  좋은 예: "문제 상황 클로즈업", "제품 등장, 손 개입", "사용 전후 비교", "질감 매크로샷"
-  나쁜 예: 특정 인물 묘사, 특정 배경 묘사, 화면에 뜬 문구를 그대로 옮기기
+골격만 적으면 재현이 안 된다. "제품 등장" 같은 말로는 편집자가 어떤 소재를 써야 할지
+고를 수 없고, 결국 전혀 다른 영상이 나온다. **동작 단위로 적는다.**
 
-대사를 받아적을 때는 예외다. 카피라이터가 말의 **구조**(어떤 순서로 설득했는지)를
-참고해야 하므로 흐름을 요약해 넘기되, 문장을 그대로 베껴 쓰지는 않는다.`;
+  ✗ 너무 성김: "제품 등장, 손 개입"
+  ✓ 재현 가능: "한 손으로 지퍼를 끝까지 당겨 연다"
+
+  ✗ 너무 성김: "사용 전후 비교"
+  ✓ 재현 가능: "얼룩진 면을 화면 왼쪽에, 닦아낸 면을 오른쪽에 붙여 보여준다"
+
+편집자는 이 문장을 들고 같은 동작이 찍힌 소재를 찾는다. 그러니 **무엇이 어떻게
+움직이는지**가 적혀 있어야 한다. 카메라 움직임·화면 분할·손의 개입 여부까지 적는다.
+
+## 그래도 가져오지 않는 것 — 선은 여기다
+
+  · 원본 영상의 화면(픽셀) — 우리는 다른 소재로 같은 동작을 다시 찍은 걸 쓴다
+  · 대사·자막 문구를 그대로 옮기기 — 흐름만 적고 문장은 카피라이터가 새로 쓴다
+  · 등장 인물의 외모·옷차림, 특정 배경, 브랜드명, 화면에 뜬 로고나 문구
+
+즉 **"무엇을 어떤 순서로 어떻게 보여주는가"는 최대한 자세히, "그 화면 자체와 그 말
+자체"는 하나도** 가져오지 않는다. 같은 동작을 다른 소재로 다시 구성하는 것이다.
+
+## 소구 포인트
+
+"가격" 같은 이름표만 남기지 마라. **무엇을 주장했고 그걸 화면으로 어떻게 증명했는지**를
+같이 적는다. 카피라이터가 그 주장을 한국어로 다시 쓰고, 편집자가 그 증명 장면을
+소재에서 찾는다. 주장 자체는 그 상품의 사실이므로 가져와도 된다 — 베끼면 안 되는 건
+그 주장을 표현한 문장이다.`;
 
 interface BlueprintResponse {
   hook_type: string;
   hook_duration_sec: number;
-  cuts: { t: [number, number]; shot: string; purpose: string }[];
-  appeal_order: string[];
+  cuts: {
+    t: [number, number];
+    /** 화면 유형 (거시적 분류) */
+    shot: string;
+    /** 프레임 안에서 실제로 일어나는 동작. 편집자가 이걸로 소재를 고른다. */
+    action: string;
+    /** 카메라·화면 구성 (고정 / 천천히 줌인 / 좌우 분할 / 위에서 내려다봄 …) */
+    framing: string;
+    purpose: string;
+  }[];
+  /** 무엇을 주장했고 화면으로 어떻게 증명했는가 */
+  appeals: { point: string; shown_as: string }[];
   narrative_flow: string;
   climax_at_sec: number | null;
   cta_position: string;
@@ -75,15 +104,20 @@ ${images.length > 0 ? `첨부 ${images.length}장은 영상에서 시간순으�
 - hook_type: problem_shock / result_first / curiosity_gap / satisfying_motion /
   price_reveal / comparison 중 하나, 또는 비슷한 형태를 새로 명명
 - hook_duration_sec: 훅 구간 길이
-- cuts: [{t:[시작,끝], shot:"화면 유형", purpose:"hook|problem|solution_reveal|proof|benefit|price|cta"}]
-- appeal_order: 소구 포인트 순서 (한국어 명사구 배열)
+- cuts: [{t:[시작,끝], shot:"화면 유형", action:"프레임 안에서 일어나는 동작",
+    framing:"카메라·화면 구성", purpose:"hook|problem|solution_reveal|proof|benefit|price|cta"}]
+  · action 은 편집자가 같은 동작의 소재를 찾는 데 쓴다. 동작 단위로 구체적으로.
+    예: "한 손으로 지퍼를 끝까지 당겨 연다", "천으로 표면을 세 번 문지른다"
+  · 인물 외모·옷·배경·브랜드는 적지 않는다. 움직임만 적는다.
+- appeals: [{point:"무엇을 주장했는가", shown_as:"그걸 화면으로 어떻게 증명했는가"}]
+  · 순서대로. 예: {point:"물이 스며들지 않는다", shown_as:"물을 붓고 3초 뒤 털어낸다"}
 - narrative_flow: 말이 어떤 순서로 설득했는지 2~3문장 요약.
   문장을 그대로 옮기지 말고 흐름만 적는다. (예: "자기 경험으로 문제 제기 → 제품 등장 →
   사용 과정 묘사 → 결과 감탄 → 같은 취향 사람 지목")
 - climax_at_sec: 임팩트가 가장 큰 지점. 모르면 null.
 - cta_position: "end" / "mid" / "both"
 
-{"hook_type":"","hook_duration_sec":0,"cuts":[],"appeal_order":[],"narrative_flow":"","climax_at_sec":null,"cta_position":"end"}`,
+{"hook_type":"","hook_duration_sec":0,"cuts":[],"appeals":[],"narrative_flow":"","climax_at_sec":null,"cta_position":"end"}`,
       { tier: 'reasoning', system: CHARTER, images, maxTokens: 3000 },
     );
 
@@ -105,7 +139,7 @@ ${images.length > 0 ? `첨부 ${images.length}장은 영상에서 시간순으�
           hook_type: parsed.hook_type,
           hook_duration_sec: parsed.hook_duration_sec,
           cuts,
-          appeal_order: parsed.appeal_order,
+          appeals: parsed.appeals,
           climax_at_sec: parsed.climax_at_sec,
           cta_position: parsed.cta_position,
         })
@@ -122,11 +156,12 @@ ${images.length > 0 ? `첨부 ${images.length}장은 영상에서 시간순으�
           id: (row as { id: string }).id,
           hookType: parsed.hook_type,
           cuts,
-          appealOrder: parsed.appeal_order,
+          appeals: parsed.appeals,
         },
       },
       'analyst',
-      `${parsed.hook_type} 훅 / 컷 ${cuts.length}개 / 설득 순서 [${parsed.appeal_order.join(' → ')}]. ` +
+      `${parsed.hook_type} 훅 / 컷 ${cuts.length}개 / ` +
+      `소구 [${(parsed.appeals ?? []).map((a) => a.point).join(' → ')}]. ` +
         `흐름: ${parsed.narrative_flow}`,
       images.length === 0 ? '원본 영상을 못 받아 캡션만으로 추론했습니다. 정확도가 떨어집니다.' : undefined,
     );

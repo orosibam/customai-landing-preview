@@ -2,11 +2,12 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MAX_CLIP_SEC, MIRROR_FOOTAGE, VIDEO, ZOOM_FOOTAGE, storagePath } from '../../config.js';
-import { concatClips, mux, probe, thumbnail, trimToPortrait } from '../../lib/ffmpeg.js';
+import { concatClips, extractFrames, mux, probe, thumbnail, trimToPortrait } from '../../lib/ffmpeg.js';
 import { DEFAULT_STYLE, writeAss, type SubtitleLine } from '../../lib/subtitles.js';
 import { downloadFile, uploadFile } from '../../lib/storage.js';
 import { db, must } from '../../lib/supabase.js';
 import { askJson } from '../../lib/llm.js';
+import { readFile, readdir } from 'node:fs/promises';
 import { fail, HandoffError, withNote, type Brief, type ReviewResult, type TeamMember } from '../types.js';
 
 /**
@@ -22,7 +23,13 @@ import { fail, HandoffError, withNote, type Brief, type ReviewResult, type TeamM
  */
 
 interface AssignResponse {
-  assignments: { cut_index: number; asset_index: number; start_sec: number }[];
+  assignments: {
+    cut_index: number;
+    asset_index: number;
+    start_sec: number;
+    /** 설계도의 action 과 실제로 맞는 소재를 찾았는가. false 면 근사치를 쓴 것이다. */
+    matched?: boolean;
+  }[];
 }
 
 export const editor: TeamMember = {
@@ -50,24 +57,74 @@ export const editor: TeamMember = {
       }),
     );
 
+    // 소재에 무엇이 찍혔는지 모르면 배정이 사실상 무작위가 된다.
+    // 설계도가 "지퍼를 끝까지 당겨 연다" 라고 적어줘도, 길이만 보고 고르면
+    // 전혀 다른 장면이 그 자리에 들어간다. 그래서 프레임을 뽑아 눈으로 본다.
+    const assetViews = await Promise.all(
+      assetInfos.map(async (a) => {
+        const dir = await mkdtemp(join(tmpdir(), `frames-${a.index}-`));
+        await extractFrames(a.localPath, join(dir, 'f-%02d.jpg'), 3).catch(() => {});
+        const files = await readdir(dir).catch(() => [] as string[]);
+        const images = await Promise.all(
+          files
+            .filter((f) => f.endsWith('.jpg'))
+            .sort()
+            .slice(0, 3)
+            .map(async (f) => ({
+              mediaType: 'image/jpeg' as const,
+              base64: (await readFile(join(dir, f))).toString('base64'),
+            })),
+        );
+        return { index: a.index, durationSec: a.durationSec, images };
+      }),
+    );
+
+    const withFrames = assetViews.filter((v) => v.images.length > 0);
+    const allImages = withFrames.flatMap((v) => v.images);
+
     const parsed = await askJson<AssignResponse>(
       `설계도의 컷에 소재를 배정해라.
 
+${
+  withFrames.length > 0
+    ? `첨부 이미지는 소재에서 뽑은 프레임이다. 소재 순서대로 ${withFrames
+        .map((v) => `${v.index}번 ${v.images.length}장`)
+        .join(', ')} 이다.
+**각 소재에 무엇이 어떻게 움직이는지 보고, 설계도의 action 과 가장 가까운 것을 골라라.**
+길이만 보고 고르지 마라 — 그러면 전혀 다른 장면이 들어간다.`
+    : '⚠️ 소재 프레임을 못 뽑았다. 길이만 보고 배정할 수밖에 없으니 다양성이라도 확보해라.'
+}
+
 컷:
-${JSON.stringify(blueprint.cuts.map((c, i) => ({ cut_index: i, shot: c.shot, purpose: c.purpose })), null, 2)}
+${JSON.stringify(
+  blueprint.cuts.map((c, i) => ({
+    cut_index: i,
+    purpose: c.purpose,
+    shot: c.shot,
+    action: c.action,
+    framing: c.framing,
+  })),
+  null,
+  2,
+)}
 
 소재 (전체 길이, 초):
 ${JSON.stringify(assetInfos.map((a) => ({ asset_index: a.index, duration_sec: Number(a.durationSec.toFixed(1)) })), null, 2)}
 
 규칙:
 - 모든 컷에 소재를 하나씩 배정한다.
+- **action 이 맞는 것을 우선한다.** 맞는 소재가 없으면 가장 비슷한 것을 고르고
+  그 컷의 matched 를 false 로 표시해라.
 - 연속된 두 컷에 같은 소재를 쓰지 않는다. 화면이 안 바뀐 것처럼 보인다.
-- start_sec 은 그 소재에서 잘라낼 시작 지점. (소재 길이 - ${MAX_CLIP_SEC}) 이하여야 한다.
+- start_sec 은 그 소재에서 그 동작이 실제로 보이는 지점으로 잡는다.
+  (소재 길이 - ${MAX_CLIP_SEC}) 이하여야 한다.
 - 맨 앞 0.5초는 피한다. 보통 페이드인이라 흐리다.
 
-{"assignments":[{"cut_index":0,"asset_index":0,"start_sec":0.5}]}`,
-      { tier: 'fast', maxTokens: 1500 },
+{"assignments":[{"cut_index":0,"asset_index":0,"start_sec":0.5,"matched":true}]}`,
+      { tier: 'reasoning', images: allImages, maxTokens: 2000 },
     );
+
+    const unmatched = (parsed.assignments ?? []).filter((a) => a.matched === false).length;
 
     // 컷을 잘라 정규화한다.
     const clipPaths: string[] = [];
@@ -166,6 +223,12 @@ ${JSON.stringify(assetInfos.map((a) => ({ asset_index: a.index, duration_sec: Nu
       'editor',
       `${info.durationSec.toFixed(1)}초 / 컷 ${clipPaths.length}개 / 소스속도 ${audience.footageRate}배 / ` +
         `자막 ${audience.subtitleFontSize}px`,
+      // 동작이 안 맞는 컷은 "설계도를 따라한 것처럼 보이지만 실은 다른 영상" 이 되는
+      // 지점이다. 조용히 넘기면 왜 안 터지는지 나중에 알 수 없다.
+      unmatched > 0
+        ? `컷 ${unmatched}개는 설계도의 동작과 맞는 소재가 없어 근사치를 썼습니다. ` +
+          `소재를 더 모으거나 상품을 바꾸면 재현도가 올라갑니다.`
+        : undefined,
     );
   },
 

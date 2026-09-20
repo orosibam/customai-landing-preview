@@ -58,13 +58,17 @@ ${audience.toneGuidance}
 
 설계도:
 - 훅 유형: ${blueprint.hookType}
-- 설득 순서: ${blueprint.appealOrder.join(' → ')}
+- 소구 포인트 (원본이 주장한 것과 그걸 증명한 방식):
+${blueprint.appeals.map((a, i) => `  ${i + 1}. ${a.point}  ← 화면: ${a.shown_as}`).join('\n')}
+  · 이 주장들을 **같은 순서로** 다시 해라. 주장 자체는 그 상품의 사실이므로 가져온다.
+  · 다만 문장은 새로 쓴다. 원본 대사를 번역하는 게 아니라 한국어로 다시 말하는 것이다.
 - 컷 구성:
 ${JSON.stringify(
   blueprint.cuts.map((c, i) => ({
     cut_index: i,
     purpose: c.purpose,
     shot: c.shot,
+    action: c.action,
     duration_sec: Number((c.t[1] - c.t[0]).toFixed(1)),
   })),
   null,

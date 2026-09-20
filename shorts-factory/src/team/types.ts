@@ -54,8 +54,19 @@ export interface Brief {
   blueprint?: {
     id: string;
     hookType: string;
-    cuts: { t: [number, number]; shot: string; purpose: string }[];
-    appealOrder: string[];
+    /**
+     * action 은 편집자가 "같은 동작이 찍힌 소재" 를 고르는 데 쓴다.
+     * 여기가 성기면("제품 등장") 전혀 다른 영상이 나온다.
+     */
+    cuts: {
+      t: [number, number];
+      shot: string;
+      action: string;
+      framing: string;
+      purpose: string;
+    }[];
+    /** 무엇을 주장했고 화면으로 어떻게 증명했는가. 카피라이터가 그 주장을 한국어로 다시 쓴다. */
+    appeals: { point: string; shown_as: string }[];
   };
 
   /** 카피라이터의 산출물 */
