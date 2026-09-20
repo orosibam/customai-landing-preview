@@ -1,5 +1,5 @@
 import { askJson } from '../../lib/llm.js';
-import { detectFormalEndings, splitIntoLines } from '../../lib/korean.js';
+import { detectFormalEndings, estimateDurationSec, splitIntoLines } from '../../lib/korean.js';
 import { db, must } from '../../lib/supabase.js';
 import { fail, HandoffError, withNote, type Brief, type ReviewResult, type TeamMember } from '../types.js';
 
@@ -30,6 +30,20 @@ interface ScriptResponse {
   hook_rationale: string;
 }
 
+/**
+ * 나레이션 목표 길이(초).
+ *
+ * 검수는 55초에서 떨어뜨린다. 목표를 그 턱에 두면 추정 오차 몇 초에 매번 걸리므로
+ * 여유를 두고 잡는다. 원본 방법론도 30~55초 구간을 쓴다.
+ */
+const TARGET_SEC = 42;
+
+/** korean.ts 의 estimateDurationSec 과 같은 값이어야 한다. 다르면 한쪽이 통과시킨 걸 다른 쪽이 떨어뜨린다. */
+const SYLLABLES_PER_SEC = 6.2;
+
+/** 문장이 너무 많으면 컷당 체류가 짧아져 무슨 말인지 안 들린다. */
+const MAX_LINES = 10;
+
 export const writer: TeamMember = {
   id: 'writer',
   role: '카피라이터',
@@ -49,6 +63,17 @@ export const writer: TeamMember = {
 ${audience.toneGuidance}
 
 한 문장은 ${audience.sentenceChars.min}~${audience.sentenceChars.max}자로 쓴다.`;
+
+    // 길이 예산.
+    //
+    // 24차 제작이 여기서 걸렸다 — 나레이션이 74.4초로 나왔고 쇼츠 상한(55초)을
+    // 넘겼다. 컷이 10개였고 "컷 길이에 맞춰 한두 문장" 이라고만 적어 보냈더니
+    // 16문장이 나왔다. **총량을 아무도 안 보고 있었다.**
+    //
+    // 초당 음절 수는 korean.ts 의 추정식과 같은 값을 쓴다. 두 곳이 다른 수를
+    // 쓰면 한쪽이 통과시킨 걸 다른 쪽이 떨어뜨린다.
+    const charBudget = Math.floor(TARGET_SEC * SYLLABLES_PER_SEC);
+    const maxLines = Math.max(4, Math.min(blueprint.cuts.length, MAX_LINES));
 
     const prompt = `설계도에 맞춰 한국어 나레이션을 써라.
 
@@ -77,8 +102,18 @@ ${JSON.stringify(
 
 분석가 메모: ${flowNote}
 
-각 컷에 올라갈 문장을 쓴다. 컷 길이에 맞춰 — ${audience.minCutSec}초 컷에 한두 문장.
-purpose 가 hook 인 컷의 문장이 "${blueprint.hookType}" 방식으로 시선을 잡아야 한다.
+각 컷에 올라갈 문장을 쓴다. purpose 가 hook 인 컷의 문장이 "${blueprint.hookType}"
+방식으로 시선을 잡아야 한다.
+
+## 길이 예산 (제일 중요)
+
+읽었을 때 **전부 합쳐 ${TARGET_SEC}초 안에 끝나야 한다.** 한국어는 초당 약 6음절이라
+**한글 ${charBudget}자가 상한**이다. CTA 까지 포함한 수치다.
+
+- 문장은 최대 ${maxLines}개. 컷이 ${blueprint.cuts.length}개라고 컷마다 두 문장씩
+  쓰면 예산을 훌쩍 넘는다. **컷 하나에 문장 하나가 기본이고**, 짧은 컷은 문장 없이
+  화면만 가도 된다.
+- 넘칠 것 같으면 설명을 버려라. 쇼츠에서 잘리는 건 언제나 설명이지 훅이 아니다.
 
 {"lines":[{"text":"","cut_index":0}],"cta":"","hook_rationale":"훅을 이렇게 쓴 이유 한 문장"}`;
 
@@ -108,8 +143,41 @@ purpose 가 hook 인 컷의 문장이 "${blueprint.hookType}" 방식으로 시�
         lines.push({ idx: lines.length, text: chunk, cutIndex: line.cut_index });
       }
     }
+    const ctaStart = lines.length;
     for (const chunk of splitIntoLines(parsed.cta, audience.sentenceChars.min, audience.sentenceChars.max)) {
       lines.push({ idx: lines.length, text: chunk, cutIndex: blueprint.cuts.length - 1 });
+    }
+
+    // 예산을 넘으면 **여기서 자른다.**
+    //
+    // 프롬프트로 부탁만 해두면 언젠가 또 넘친다(24차가 74.4초였다). 넘친 걸
+    // 성우까지 들고 가면 합성 비용을 다 쓰고 검수에서 떨어진다.
+    //
+    // 무엇을 버리는가: 훅(첫 문장)과 CTA(마지막 묶음)는 남기고 **가운데에서
+    // 제일 긴 문장**부터 버린다. 쇼츠에서 잘리는 건 언제나 설명이지 훅이 아니고,
+    // CTA 가 없으면 링크를 눌러야 할 이유가 사라져 영상 자체가 무의미해진다.
+    const budget = () => lines.reduce((sum, l) => sum + estimateDurationSec(l.text), 0);
+    const dropped: string[] = [];
+
+    while (budget() > TARGET_SEC && lines.length - (lines.length - ctaStart) > 2) {
+      const middle = lines.slice(1, ctaStart);
+      if (middle.length === 0) break;
+      const longest = middle.reduce((a, b) =>
+        estimateDurationSec(b.text) > estimateDurationSec(a.text) ? b : a,
+      );
+      const at = lines.indexOf(longest);
+      if (at < 0) break;
+      dropped.push(lines[at]!.text);
+      lines.splice(at, 1);
+      lines.forEach((l, i) => (l.idx = i));
+    }
+
+    if (dropped.length > 0) {
+      console.warn(
+        `대본이 예산(${TARGET_SEC}초)을 넘어 ${dropped.length}문장을 잘랐습니다. ` +
+          `남은 추정 ${budget().toFixed(1)}초.\n` +
+          dropped.map((t) => `   버림: "${t}"`).join('\n'),
+      );
     }
 
     const row = await must(
