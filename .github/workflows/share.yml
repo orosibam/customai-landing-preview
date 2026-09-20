@@ -10,6 +10,15 @@ name: 완성본 링크 만들기
 #
 # 렌더를 다시 하지 않으므로 30초면 끝나고 LLM 비용도 들지 않는다.
 on:
+  # push 트리거가 필요하다. GitHub 은 **한 번도 돌아본 적 없는 워크플로우**에는
+  # workflow_dispatch 를 안 받는다(404). 파일을 밀어 넣는 것만으로는 등록이 안 되고,
+  # 한 번 돌아야 목록에 생긴다. 그 뒤로는 수동 실행이 된다.
+  push:
+    branches:
+      - 'claude/**'
+    paths:
+      - '.github/workflows/share.yml'
+      - 'shorts-factory/src/share.ts'
   workflow_dispatch:
     inputs:
       run_id:
