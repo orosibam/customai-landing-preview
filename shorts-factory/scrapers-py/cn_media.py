@@ -208,7 +208,7 @@ def as_int(value: Any) -> int | None:
 # ---------------------------------------------------------------------------
 
 
-def xhs_feed(limit: int, channel: str | None) -> list[dict[str, Any]]:
+def xhs_feed(limit: int, channel: str | None, rounds: int = 1) -> list[dict[str, Any]]:
     """
     /explore 피드를 SSR 로 받아 노트 목록을 만든다.
 
@@ -216,17 +216,41 @@ def xhs_feed(limit: int, channel: str | None) -> list[dict[str, Any]]:
     호출부가 캡션을 보고 한다. 「검색한 척」 하지 않는 게 중요하다 —
     실제로는 그날 피드에 뜬 것 중에서 고르는 것이고, 그 한계를 위에서 알아야
     할당량을 다른 플랫폼으로 돌릴지 판단할 수 있다.
+
+    한 번 부르면 27건쯤 온다(실측). 특정 상품 키워드를 맞히기엔 모수가 너무 작아서
+    피드를 여러 번 부른다 — 부를 때마다 내용이 갈리므로 중복을 걷어내면 모수가 는다.
+    얼마나 버는지는 호출부가 로그로 본다. 한 번에 몰아치지 않도록 사이를 띄운다.
     """
     session = new_session()
     url = f"{XHS_ORIGIN}/explore"
     if channel:
         url += f"?channel_id={quote(channel)}"
 
-    state = unref(extract_initial_state(get_html(session, url)))
-
     notes: list[dict[str, Any]] = []
     seen: set[str] = set()
 
+    for round_no in range(max(rounds, 1)):
+        if round_no > 0:
+            polite_sleep()
+        state = unref(extract_initial_state(get_html(session, url)))
+        _collect_feed_notes(state, notes, seen, limit)
+        if len(notes) >= limit:
+            break
+
+    if not notes:
+        raise Blocked(
+            "피드에서 노트를 한 건도 못 읽었습니다. __INITIAL_STATE__ 는 받았으므로 "
+            "차단이 아니라 필드 이름이 바뀐 쪽이 유력합니다 (noteId/xsecToken 을 찾지 못함)."
+        )
+    return notes
+
+
+def _collect_feed_notes(
+    state: Any,
+    notes: list[dict[str, Any]],
+    seen: set[str],
+    limit: int,
+) -> None:
     for node in walk(state):
         note_id = node.get("id") or node.get("noteId")
         token = node.get("xsecToken") or node.get("xsec_token")
@@ -256,14 +280,7 @@ def xhs_feed(limit: int, channel: str | None) -> list[dict[str, Any]]:
         )
         seen.add(note_id)
         if len(notes) >= limit:
-            break
-
-    if not notes:
-        raise Blocked(
-            "피드에서 노트를 한 건도 못 읽었습니다. __INITIAL_STATE__ 는 받았으므로 "
-            "차단이 아니라 필드 이름이 바뀐 쪽이 유력합니다 (noteId/xsecToken 을 찾지 못함)."
-        )
-    return notes
+            return
 
 
 # ---------------------------------------------------------------------------
@@ -519,8 +536,13 @@ def ali_search(keyword: str, limit: int) -> list[str]:
 
     if not ids:
         raise Blocked(
-            f'1688 검색 "{keyword}" 에서 상품 id 를 한 건도 못 찾았습니다. '
-            "페이지는 받았으므로 차단 페이지이거나 검색 결과가 비어 있습니다."
+            f'1688 검색 "{keyword}" 에서 상품 id 를 한 건도 못 찾았습니다 '
+            f"({len(html)}바이트 수신).\n"
+            "   실측(2026-09-20): 검색 페이지 25KB 안에 detail.1688.com/offer 링크도, "
+            "offerId/data-offer-id 키도 0건입니다. 캡차도 로그인 벽도 아닙니다 — "
+            "상품 데이터가 애초에 HTML 에 없고 JS 가 나중에 받아옵니다.\n"
+            "   즉 HTTP 만으로는 1688 '검색' 을 뚫을 수 없습니다. 상품 id 를 다른 데서 "
+            "구해 ali-offer 로 상세만 여는 경로가 필요합니다 (상세 페이지는 열립니다)."
         )
     return ids
 
@@ -596,6 +618,7 @@ def main() -> int:
     p = sub.add_parser("xhs-feed")
     p.add_argument("--limit", type=int, default=30)
     p.add_argument("--channel", default=None)
+    p.add_argument("--rounds", type=int, default=1)
 
     p = sub.add_parser("xhs-note")
     p.add_argument("--id", required=True)
@@ -622,7 +645,7 @@ def main() -> int:
 
     try:
         if args.cmd == "xhs-feed":
-            result: Any = xhs_feed(args.limit, args.channel)
+            result: Any = xhs_feed(args.limit, args.channel, args.rounds)
         elif args.cmd == "xhs-note":
             result = xhs_note(args.id, args.token)
             polite_sleep()

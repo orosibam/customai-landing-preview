@@ -44,7 +44,16 @@ export class FeedMissError extends Error {
  * 피드를 한 번에 몇 건까지 훑을 것인가.
  * 키워드 필터를 캡션으로만 걸 수 있어서 모수가 작으면 매번 0건이 난다.
  */
-const FEED_SCAN_LIMIT = Number(optionalEnv('XHS_FEED_SCAN_LIMIT', '60'));
+const FEED_SCAN_LIMIT = Number(optionalEnv('XHS_FEED_SCAN_LIMIT', '200'));
+
+/**
+ * 피드를 몇 번 부를 것인가.
+ *
+ * 한 번 부르면 27건쯤 온다(실측 2026-09-20). 특정 상품 키워드를 그 안에서 맞히긴
+ * 어려워서 여러 번 불러 모수를 늘린다. 부를 때마다 내용이 갈리므로 중복을 걷어내면
+ * 쌓인다. 무한정 올릴 값은 아니다 — 연속 호출은 차단을 부른다.
+ */
+const FEED_ROUNDS = Number(optionalEnv('XHS_FEED_ROUNDS', '6'));
 
 /**
  * 훑을 채널(카테고리) 목록. 비워두면 기본 피드만 본다.
@@ -76,9 +85,10 @@ export const xiaohongshuScraper: Scraper = {
     const sources = CHANNELS.length > 0 ? CHANNELS : [undefined];
 
     for (const channel of sources) {
-      const batch = await xhsFeed(FEED_SCAN_LIMIT, channel);
+      const batch = await xhsFeed(FEED_SCAN_LIMIT, channel, FEED_ROUNDS);
       feeds.push(...batch);
     }
+    console.log(`샤오홍슈 피드 ${feeds.length}건 확보 (${FEED_ROUNDS}회 호출)`);
 
     const hits = feeds.filter((n) => matches(n, query.keyword)).slice(0, query.limit);
     if (hits.length === 0) throw new FeedMissError(query.keyword, feeds.length);

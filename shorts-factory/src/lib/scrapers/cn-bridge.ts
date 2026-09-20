@@ -113,8 +113,8 @@ export interface AliOffer {
  * **검색이 아니다.** 샤오홍슈 키워드 검색은 로그인 벽에 막혀 있어서, 그날 피드에 뜬 것
  * 중에서 고르는 수밖에 없다. 키워드 필터링은 호출부가 캡션으로 한다.
  */
-export function xhsFeed(limit: number, channel?: string): Promise<XhsFeedNote[]> {
-  const args = ['xhs-feed', '--limit', String(limit)];
+export function xhsFeed(limit: number, channel?: string, rounds = 1): Promise<XhsFeedNote[]> {
+  const args = ['xhs-feed', '--limit', String(limit), '--rounds', String(rounds)];
   if (channel) args.push('--channel', channel);
   return run<XhsFeedNote[]>(args);
 }
