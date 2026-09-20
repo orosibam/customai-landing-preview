@@ -10,10 +10,15 @@
  * 이 스크립트는 브라우저를 띄우고, 사람이 평소처럼 로그인하면,
  * 나머지를 알아서 처리한다.
  *
- *   npx tsx src/capture-session.ts tiktok
- *   npx tsx src/capture-session.ts naver
- *   npx tsx src/capture-session.ts inpock
- *   npx tsx src/capture-session.ts all
+ *   npm run capture xhs      샤오홍슈 — 소재 링크 수확 (QR 로그인)
+ *   npm run capture ali      1688
+ *   npm run capture tiktok   틱톡 — 탐색·업로드
+ *   npm run capture naver    네이버 클립 업로드
+ *   npm run capture inpock   인포크링크
+ *   npm run capture all      전부
+ *
+ * 대상 목록은 TARGETS 한 곳에만 둔다. 여기저기 적어두면 대상을 추가할 때
+ * 안내가 먼저 거짓말을 하기 시작한다.
  */
 
 import { writeFile, mkdir } from 'node:fs/promises';
@@ -143,11 +148,16 @@ async function capture(target: Target): Promise<boolean> {
   await browser.close();
 
   console.log(`\n  ✓ 저장했습니다 (쿠키 ${cookieCount}개) → ${outPath}`);
-  console.log(`\n  GitHub Secrets 에 넣을 이름: ${target.secretName}`);
-  console.log(`  값은 아래 명령으로 클립보드에 복사하세요:`);
-  console.log(`\n    macOS:   cat ${outPath} | pbcopy`);
+  // 바로 다음에 할 일은 대개 로컬 실행이다. Secrets 안내만 하면 "넣었는데 왜 안 되지" 가 된다.
+  console.log(`\n  이 컴퓨터에서 바로 쓰려면 — shorts-factory/.env 에 한 줄 추가:`);
+  console.log(`\n    ${target.secretName}=<${outPath} 파일 내용 전체>`);
+  console.log(`\n  파일 내용을 클립보드로 복사하는 법:`);
+  console.log(`    macOS:   cat ${outPath} | pbcopy`);
   console.log(`    Windows: type ${outPath.replace(/\//g, '\\')} | clip`);
   console.log(`    Linux:   cat ${outPath} | xclip -selection clipboard`);
+  console.log(`\n  매일 자동 실행(GitHub Actions)에도 쓰려면 같은 값을`);
+  console.log(`  저장소 Settings → Secrets and variables → Actions 에`);
+  console.log(`  ${target.secretName} 이름으로 넣으세요.`);
 
   return true;
 }
@@ -156,7 +166,9 @@ async function main(): Promise<void> {
   const which = process.argv[2];
 
   if (!which) {
-    console.log('\n사용법: npx tsx src/capture-session.ts <tiktok|naver|inpock|all>\n');
+    console.log(
+      `\n사용법: npm run capture <${TARGETS.map((t) => t.key).join('|')}|all>\n`,
+    );
     console.log('대상:');
     for (const t of TARGETS) console.log(`  ${t.key.padEnd(8)} ${t.label} — ${t.hint}`);
     console.log();
@@ -171,6 +183,7 @@ async function main(): Promise<void> {
   }
 
   console.log('\n로그인 세션 캡처');
+  console.log(`  대상: ${targets.map((t) => t.label).join(', ')}`);
   console.log('\n⚠ 저장되는 파일은 로그인 자격증명과 같습니다.');
   console.log('  .sessions/ 는 .gitignore 에 있어 커밋되지 않지만,');
   console.log('  이 파일을 누구에게도 보내지 마세요. GitHub Secrets 에만 넣습니다.');
