@@ -54,7 +54,11 @@ export const IG_SEED_TAGS = [
 export function tagsForCategory(category: string): string[] {
   if (/주방/.test(category)) return ['kitchengadgets', 'kitchenhacks', 'cookinggadgets'];
   if (/수납|정리|생활/.test(category)) return ['organizationhacks', 'homehacks', 'cleaninghacks'];
-  if (/차량|자동차/.test(category)) return ['carcleaning', 'cardetailing', 'caraccessories'];
+  // 「세차」 는 「차량」 에 안 걸린다 — 정규식이 놓치면 조용히 전체 시드로 떨어지고,
+  // 세차 제품에 주방 해시태그가 붙는다. 실제로 세차 워터건에서 걸렸다.
+  if (/차량|자동차|세차|워터건|물총/.test(category)) {
+    return ['carcleaning', 'cardetailing', 'caraccessories'];
+  }
   if (/가전|가젯/.test(category)) return ['homegadgets', 'gadgetsyouneed', 'coolgadgets'];
   return IG_SEED_TAGS;
 }

@@ -219,13 +219,12 @@ async function usePinnedProduct(brief: Brief, needle: string): Promise<Brief> {
     outlier_score: number | null;
   }[])[0];
 
-  if (!ref) {
-    throw new HandoffError(
-      'scout',
-      `"${picked.title_ko}" 에 붙은 레퍼런스 영상이 없습니다. ` +
-        `설계도를 뽑을 원본이 없으면 구조를 베낄 수가 없습니다.`,
-    );
-  }
+  // 레퍼런스가 없으면 다시 찾아 붙인다.
+  //
+  // 예전 upsert 버그로 원본 릴스를 빼앗긴 상품들이 있다(0005 에서 고쳤지만 이미
+  // 사라진 기록은 안 돌아온다). 사람이 소재를 수확해온 뒤에 "원본이 없습니다" 로
+  // 멈추면 그 노동이 통째로 버려지므로, 여기서 한 번 더 찾아본다.
+  const reference = ref ?? (await refindReference(brief, picked));
 
   console.log(`지정 상품으로 갑니다: "${picked.title_ko}" (발굴 건너뜀)`);
 
@@ -243,17 +242,142 @@ async function usePinnedProduct(brief: Brief, needle: string): Promise<Brief> {
         rationale: picked.score_reason ?? '(지정 상품)',
       },
       reference: {
-        id: ref.id,
-        url: ref.external_url,
-        platform: ref.platform,
-        views: ref.views,
-        caption: ref.caption ?? '',
-        outlierScore: ref.outlier_score ?? 0,
+        id: reference.id,
+        url: reference.external_url,
+        platform: reference.platform,
+        views: reference.views,
+        caption: reference.caption ?? '',
+        outlierScore: reference.outlier_score ?? 0,
       },
     },
     'scout',
     `지정 상품 "${picked.title_ko}" 로 진행합니다 (발굴 건너뜀).`,
   );
+}
+
+
+interface ReferenceRow {
+  id: string;
+  external_url: string;
+  platform: string;
+  views: number | null;
+  caption: string | null;
+  outlier_score: number | null;
+}
+
+/**
+ * 원본 릴스를 다시 찾아 붙인다.
+ *
+ * ## 왜 필요했나
+ *
+ * references 의 유니크가 (platform, external_id) 였던 탓에, 같은 릴스가 다음
+ * 실행에서 다시 뽑히면 앞 상품의 원본을 빼앗았다. 유니크는 고쳤지만(0005) 이미
+ * 사라진 기록은 안 돌아온다. 그 상품으로 사람이 소재를 수확해온 상태에서
+ * "원본이 없습니다" 로 멈추면 그 노동이 통째로 버려진다.
+ *
+ * ## 같은 제품이 아니어도 되는가
+ *
+ * 원칙은 같은 제품이 나오는 릴스다. 다만 이 파이프라인이 릴스에서 가져오는 건
+ * **구조**이지 화면이 아니다 — 화면은 수확한 판매자 영상으로 채운다. 그래서
+ * 같은 제품이 없으면 "같은 종류의 문제를 같은 방식으로 보여주는" 릴스를 쓴다.
+ * 대신 무엇을 왜 골랐는지 반드시 적어 남긴다. 조용히 아무거나 붙이면 나중에
+ * 성과를 볼 때 "이 설계도가 먹혔다" 는 판단이 통째로 거짓이 된다.
+ */
+async function refindReference(
+  brief: Brief,
+  product: { id: string; title_ko: string; title_en: string | null },
+): Promise<ReferenceRow> {
+  // 상품명으로도 해시태그를 고른다. 채널 카테고리만 보면 세차 제품에 주방
+  // 해시태그가 붙는다 — 채널은 「가전·가젯」인데 상품은 세차 워터건일 수 있다.
+  const tags = [
+    ...new Set([...tagsForCategory(product.title_ko), ...tagsForCategory(brief.channel.category)]),
+  ].slice(0, 3);
+
+  console.log(`"${product.title_ko}" 의 원본 릴스를 다시 찾습니다 (#${tags.join(', #')})`);
+
+  const found: HotVideo[] = [];
+  for (const tag of tags) {
+    if (found.length >= 12) break;
+    try {
+      found.push(...(await discoverReels(tag, { limit: 8 })));
+    } catch (e) {
+      console.warn(`#${tag} 탐색 실패: ${(e as Error).message}`);
+    }
+  }
+
+  if (found.length === 0) {
+    throw new HandoffError(
+      'scout',
+      `"${product.title_ko}" 의 원본 릴스를 다시 찾지 못했습니다 ` +
+        `(#${tags.join(', #')} 에서 0건).\n` +
+        `   설계도를 뽑을 원본이 없으면 구조를 베낄 수가 없습니다.`,
+      true,
+    );
+  }
+
+  const choice = await askJson<{ index: number | null; why: string; same_product: boolean }>(
+    `아래는 인스타 릴스 목록이다. 우리가 만들 영상의 상품은 이것이다:
+
+  ${product.title_ko}${product.title_en ? ` (${product.title_en})` : ''}
+
+이 상품의 **구조 원본**으로 쓸 릴스를 하나 골라라.
+
+우선순위:
+1) 같은 제품이 나오는 릴스
+2) 없으면 같은 종류의 문제를 같은 방식으로 보여주는 릴스
+   (예: 더러운 것이 한 번에 깨끗해지는 before/after)
+
+우리가 가져오는 건 **구조**다 — 훅 형태, 컷 순서, 소구 순서. 화면은 우리가 따로
+구한 판매자 영상으로 채우므로 원본의 화면은 한 프레임도 쓰지 않는다.
+
+쓸 만한 게 하나도 없으면 index 를 null 로 해라. 억지로 고르지 마라.
+
+${JSON.stringify(
+  found.map((v, i) => ({ index: i, caption: v.caption, likes: v.likes, views: v.views })),
+  null,
+  2,
+)}
+
+{"index":0,"same_product":true,"why":"한 문장"}`,
+    { tier: 'reasoning', system: CHARTER, maxTokens: 4096 },
+  );
+
+  const source = choice.index === null ? undefined : found[choice.index];
+  if (!source) {
+    throw new HandoffError(
+      'scout',
+      `"${product.title_ko}" 에 쓸 만한 원본 릴스가 없습니다 (후보 ${found.length}건 검토).\n` +
+        `   판단: ${choice.why}`,
+      true,
+    );
+  }
+
+  const row = await must(
+    '레퍼런스 재부착',
+    db()
+      .from('references')
+      .upsert(
+        {
+          product_id: product.id,
+          platform: 'instagram',
+          external_id: source.videoId,
+          external_url: source.url,
+          caption: source.caption,
+          views: source.views,
+          outlier_score: (source.views ?? source.likes ?? 0) / 1_000_000,
+        },
+        { onConflict: 'product_id,platform,external_id' },
+      )
+      .select('id, external_url, platform, views, caption, outlier_score')
+      .single(),
+  );
+
+  console.log(
+    `원본 릴스 재부착: ${source.url}\n` +
+      `   ${choice.same_product ? '같은 제품' : '구조만 빌림'} — ${choice.why}`,
+  );
+
+  return row as ReferenceRow;
 }
 
 export const scout: TeamMember = {
