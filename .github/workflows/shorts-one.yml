@@ -9,9 +9,13 @@ on:
   push:
     branches:
       - 'claude/**'
+    # 경로를 좁게 적었다가 lib/ 만 고친 푸시에서 이 워크플로우가 안 돌았다.
+    # 오지도 않을 결과를 기다리게 된다. shorts-probe 에서 이미 같은 실수를 했는데
+    # 새 워크플로우에서 반복했다 — 제작이 건드리는 것은 전부 넣는다.
     paths:
-      - 'shorts-factory/src/team/**'
-      - 'shorts-factory/src/stage.ts'
+      - 'shorts-factory/src/**'
+      - 'shorts-factory/scrapers-py/**'
+      - 'shorts-factory/package*.json'
       - '.github/workflows/shorts-one.yml'
   workflow_dispatch:
     inputs:
