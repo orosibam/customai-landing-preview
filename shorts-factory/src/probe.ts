@@ -9,7 +9,7 @@
  *   npx tsx src/probe.ts cn-bridge xiaohongshu  골라서
  */
 
-import { VOICE_PRESETS } from './lib/typecast.js';
+import { VOICE_PRESETS } from './lib/narration.js';
 import { tiktokScraper } from './lib/scrapers/tiktok.js';
 import { instagramScraper } from './lib/scrapers/instagram.js';
 import { xiaohongshuScraper } from './lib/scrapers/xiaohongshu.js';
@@ -58,13 +58,13 @@ const CHECKS: Check[] = [
             `   타입캐스트 계정에서 액터 ID를 확인해 환경변수를 채우세요.`,
         );
       }
-      if (!process.env.TYPECAST_API_TOKEN) {
-        throw new Error(
-          'TYPECAST_API_TOKEN 이 없습니다. API 플랜이 가능한지 확인하고, ' +
-            '불가하면 웹 자동화 경로를 구현해야 합니다.',
-        );
+      // 타입캐스트 토큰을 요구하지 않는다. 기본 제공자가 edge-tts 로 바뀌었고
+      // (타입캐스트 무료 계정이 403 으로 막혔다) edge 는 키가 없다.
+      // TTS_PROVIDER=typecast 로 돌릴 때만 토큰이 필요하다.
+      if (optionalEnv('TTS_PROVIDER', 'edge') === 'typecast' && !process.env.TYPECAST_API_TOKEN) {
+        throw new Error('TTS_PROVIDER=typecast 인데 TYPECAST_API_TOKEN 이 없습니다.');
       }
-      const { narrate } = await import('./lib/typecast.js');
+      const { narrate } = await import('./lib/narration.js');
       const { mkdtemp } = await import('node:fs/promises');
       const { tmpdir } = await import('node:os');
       const { join } = await import('node:path');

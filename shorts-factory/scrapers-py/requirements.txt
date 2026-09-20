@@ -5,3 +5,7 @@ curl_cffi>=0.7
 # voice_probe.py 전용. 벤치마킹 대상의 나레이션을 자막으로 받는다.
 # 영상은 내려받지 않고 메타와 자막만 쓴다.
 yt-dlp>=2025.1.1
+
+# tts_edge.py 전용. 타입캐스트 무료 계정이 403 UNUSUAL_ACTIVITY_DETECTED 로 막혀
+# (실측 2026-09-20) 나레이션을 여기로 옮겼다. 키도 가입도 결제도 없다.
+edge-tts>=7.0.0

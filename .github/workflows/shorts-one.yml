@@ -99,11 +99,20 @@ jobs:
       # 영상도 안 나오므로, 싼 확인을 먼저 한다.
       #
       # 이 점검은 값을 찍지 않고 응답 구조만 본다 — 로그를 그대로 공유해도 안전하다.
+      # 성우가 죽어 있으면 LLM 을 쓰기 전에 여기서 멈춘다.
+      #
+      # 타입캐스트 무료 계정이 403 UNUSUAL_ACTIVITY_DETECTED 로 막혀(실측) 나레이션을
+      # edge-tts 로 옮겼다. 키도 가입도 없지만 **우리가 통제할 수 없는 서비스**라
+      # 막히면 막히는 대로 드러나야 한다. 한 문장을 실제로 합성해 본다.
       - name: 나레이션 경로 확인 (LLM 쓰기 전)
         working-directory: shorts-factory
-        env:
-          TYPECAST_API_TOKEN: ${{ secrets.TYPECAST_API_TOKEN }}
-        run: npx tsx src/probe-typecast.ts
+        run: |
+          python3 scrapers-py/tts_edge.py voices
+          python3 scrapers-py/tts_edge.py synth \
+            --text "세차했는데도 광택이 금방 사라지죠?" \
+            --voice "${EDGE_VOICE_FEMALE:-ko-KR-SunHiNeural}" \
+            --out /tmp/tts-check.mp3
+          ls -l /tmp/tts-check.mp3
 
       - name: 브라우저 evaluate 심 확인
         working-directory: shorts-factory

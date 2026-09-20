@@ -1,8 +1,10 @@
 import { writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
 import { optionalEnv, requireEnv } from '../config.js';
 import { estimateDurationSec, normalizeForSpeech } from './korean.js';
 import { probe } from './ffmpeg.js';
+import { spawn } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * 타입캐스트 나레이션 클라이언트.
@@ -34,6 +36,15 @@ export type EmotionPreset = (typeof EMOTION_PRESETS)[number];
 export interface VoicePreset {
   /** 타입캐스트 voice_id (기존 액터 ID와 같은 형식: tc_ + 24자) */
   actorId: string;
+  /**
+   * edge-tts 음성 이름.
+   *
+   * 엣지의 한국어 음성은 몇 개 안 돼서 프리셋 여럿이 같은 음성을 공유한다.
+   * 다섯 채널에 다섯 목소리가 있는 척하지 않는다 — 실제로 있는 건 여성/남성
+   * 두 갈래이고, 채널 구분은 속도·피치로만 낸다. 몇 개가 실제로 있는지는
+   * `python3 scrapers-py/tts_edge.py voices` 가 답한다.
+   */
+  edgeVoice: string;
   /** 감정 프리셋. EMOTION_PRESETS 밖의 값은 API 가 422 로 거부한다. */
   emotion: EmotionPreset;
   /** 피치. 영상에서 +1이 적정, +2는 과하다고 판정됐다. */
@@ -61,6 +72,7 @@ export const VOICE_PRESETS: Record<string, VoicePreset> = {
   // 생활·수납용품 채널
   'warm-female': {
     actorId: optionalEnv('TYPECAST_ACTOR_WARM_FEMALE', 'tc_65a0e1eb23a607b9906c0154'),
+    edgeVoice: optionalEnv('EDGE_VOICE_FEMALE', 'ko-KR-SunHiNeural'),
     emotion: 'normal',
     pitch: 1,
     speed: 1.0,
@@ -69,6 +81,7 @@ export const VOICE_PRESETS: Record<string, VoicePreset> = {
   // 주방용품 채널
   'calm-female': {
     actorId: optionalEnv('TYPECAST_ACTOR_CALM_FEMALE', 'tc_69f2e455ea79fd197aa0476f'),
+    edgeVoice: optionalEnv('EDGE_VOICE_FEMALE', 'ko-KR-SunHiNeural'),
     emotion: 'normal',
     pitch: 0,
     speed: 0.98,
@@ -77,6 +90,7 @@ export const VOICE_PRESETS: Record<string, VoicePreset> = {
   // 생활·인테리어 채널
   'soft-female': {
     actorId: optionalEnv('TYPECAST_ACTOR_SOFT_FEMALE', 'tc_68d4b115f0486108a7eefb37'),
+    edgeVoice: optionalEnv('EDGE_VOICE_FEMALE', 'ko-KR-SunHiNeural'),
     emotion: 'normal',
     pitch: 1,
     speed: 1.0,
@@ -85,6 +99,7 @@ export const VOICE_PRESETS: Record<string, VoicePreset> = {
   // 가전·가젯 채널
   'energetic-male': {
     actorId: optionalEnv('TYPECAST_ACTOR_ENERGETIC_MALE', 'tc_6a4f2130d153a5cac8e19996'),
+    edgeVoice: optionalEnv('EDGE_VOICE_MALE', 'ko-KR-InJoonNeural'),
     emotion: 'happy',
     pitch: 1,
     speed: 1.1,
@@ -93,6 +108,7 @@ export const VOICE_PRESETS: Record<string, VoicePreset> = {
   // 뷰티·헬스 채널
   'bright-male': {
     actorId: optionalEnv('TYPECAST_ACTOR_BRIGHT_MALE', 'tc_6a7446c19f2d7dfed990a900'),
+    edgeVoice: optionalEnv('EDGE_VOICE_MALE', 'ko-KR-InJoonNeural'),
     emotion: 'happy',
     pitch: 1,
     speed: 1.05,
@@ -136,7 +152,8 @@ export interface NarrationLine {
 export interface NarrationResult {
   lines: NarrationLine[];
   totalDurationSec: number;
-  mode: 'api' | 'browser';
+  /** 어느 제공자로 합성했는가. narrations.source_mode 에 그대로 남는다. */
+  mode: 'edge' | 'api' | 'browser';
 }
 
 /**
@@ -251,6 +268,84 @@ export class TypecastApiError extends Error {
  * API가 없거나 한도를 넘었을 때만 탄다. 웹 UI는 언제든 바뀌므로 실패하면
  * 조용히 넘어가지 말고 그대로 던진다 — 호출부가 대시보드에 수동 작업으로 띄운다.
  */
+/**
+ * edge-tts 합성 — 지금의 기본 경로.
+ *
+ * ## 왜 기본이 됐나
+ *
+ * 타입캐스트 무료 계정이 막혔다 (실측 2026-09-20):
+ *   403 {"error_code":"UNUSUAL_ACTIVITY_DETECTED", ... "subscribe to one of our paid plans"}
+ * 키도 코드도 아니고 요금제 문제라 코드로 풀 수 없다. 결제 전까지는 건드리지도
+ * 않는다 — 응답에 "계속하면 접근이 정지될 수 있다" 고 적혀 있다.
+ *
+ * edge-tts 는 키·가입·결제가 없다. 대신 **우리가 통제할 수 없는 서비스**이므로
+ * 막히면 막히는 대로 드러나야 한다. 파이썬 쪽이 빈 파일을 걸러 던지고, 여기서는
+ * 그 메시지를 그대로 올린다.
+ *
+ * ## 프리셋 값을 어떻게 옮기는가
+ *
+ * 타입캐스트의 speed(배율)·pitch(반음)를 엣지의 rate(%)·pitch(Hz)로 바꾼다.
+ *   · speed 1.1  →  rate "+10%"
+ *   · pitch 1    →  pitch "+12Hz"   (반음 하나가 대략 6%, 여성 음역 200Hz 기준)
+ *
+ * 뒤쪽 환산은 **어림값이다.** 정확한 대응이 아니라서, 실제 들어보고 조정할
+ * 여지를 env 로 열어뒀다(EDGE_PITCH_HZ_PER_SEMITONE).
+ */
+async function synthesizeViaEdge(
+  textSpoken: string,
+  preset: VoicePreset,
+  outPath: string,
+): Promise<void> {
+  const ratePct = Math.round((preset.speed - 1) * 100);
+  const hzPerSemitone = Number(optionalEnv('EDGE_PITCH_HZ_PER_SEMITONE', '12'));
+  const pitchHz = Math.round(preset.pitch * hzPerSemitone);
+
+  const sign = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
+
+  await runPython([
+    'synth',
+    '--text',
+    textSpoken,
+    '--voice',
+    preset.edgeVoice,
+    '--rate',
+    `${sign(ratePct)}%`,
+    '--pitch',
+    `${sign(pitchHz)}Hz`,
+    '--out',
+    outPath,
+  ]);
+}
+
+/** tts_edge.py 호출. 실패하면 파이썬이 적은 이유를 그대로 올린다. */
+function runPython(args: string[]): Promise<unknown> {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const script = join(here, '..', '..', 'scrapers-py', 'tts_edge.py');
+  const python = optionalEnv('PYTHON_BIN', 'python3');
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(python, [script, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (c) => (out += c));
+    child.stderr.on('data', (c) => (err += c));
+    child.on('error', (e) =>
+      reject(new Error(`${python} 를 실행하지 못했습니다 (${e.message}).`)),
+    );
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`edge-tts 합성 실패: ${err.trim() || `종료코드 ${code}`}`));
+        return;
+      }
+      try {
+        resolve(JSON.parse(out));
+      } catch {
+        resolve({});
+      }
+    });
+  });
+}
+
 async function synthesizeViaBrowser(
   _textSpoken: string,
   _preset: VoicePreset,
@@ -297,7 +392,16 @@ export async function narrate(
     : base;
   await mkdir(opts.outDir, { recursive: true });
 
-  let mode: 'api' | 'browser' = opts.forceBrowser ? 'browser' : 'api';
+  /**
+   * 어느 제공자를 쓸 것인가.
+   *
+   * 기본은 edge 다 — 타입캐스트 무료 계정이 403 UNUSUAL_ACTIVITY_DETECTED 로
+   * 막혔고(실측 2026-09-20), 그건 결제로만 풀린다. 결제한 뒤에는
+   * TTS_PROVIDER=typecast 한 줄로 되돌아온다.
+   */
+  const provider = optionalEnv('TTS_PROVIDER', 'edge');
+  let mode: 'edge' | 'api' | 'browser' =
+    opts.forceBrowser ? 'browser' : provider === 'typecast' ? 'api' : 'edge';
   const lines: NarrationLine[] = [];
 
   for (const [idx, raw] of texts.entries()) {
@@ -311,7 +415,9 @@ export async function narrate(
 
     const audioPath = join(opts.outDir, `line-${String(idx).padStart(2, '0')}.wav`);
 
-    if (mode === 'api') {
+    if (mode === 'edge') {
+      await synthesizeViaEdge(normalized.text, preset, audioPath);
+    } else if (mode === 'api') {
       try {
         await synthesizeViaApi(normalized.text, preset, audioPath);
       } catch (e) {

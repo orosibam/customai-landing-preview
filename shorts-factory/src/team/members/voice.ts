@@ -2,7 +2,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { storagePath } from '../../config.js';
-import { narrate } from '../../lib/typecast.js';
+import { narrate } from '../../lib/narration.js';
 import { concatAudio } from '../../lib/ffmpeg.js';
 import { uploadFile } from '../../lib/storage.js';
 import { db, must } from '../../lib/supabase.js';
