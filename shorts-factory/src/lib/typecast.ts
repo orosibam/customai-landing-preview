@@ -315,22 +315,25 @@ export async function narrate(
       try {
         await synthesizeViaApi(normalized.text, preset, audioPath);
       } catch (e) {
-        if (e instanceof TypecastApiError && (e.status === 401 || e.status === 403 || e.status === 429)) {
-          // 인증 실패나 한도 초과면 나머지 문장도 똑같이 실패한다. 경로를 바꾼다.
-          //
-          // **응답 본문을 반드시 같이 찍는다.** 전에는 상태 코드만 찍고 넘어갔는데,
-          // 그러면 로그에 남는 마지막 말이 "웹 자동화가 아직 구현되지 않았습니다" 가
-          // 되어 **원인이 미구현인 것처럼 보인다.** 진짜 원인은 그 앞의 403 이고,
-          // 왜 403 인지는 본문에만 적혀 있다(키 거부인지, 요금제인지, 보이스 권한인지).
-          console.warn(
-            `타입캐스트 API 사용 불가 — ${e.message}\n` +
-              `   구조만 안전하게 확인하려면: npm run probe:typecast`,
+        // 폴백을 없앴다.
+        //
+        // 403·401 이면 브라우저 경로로 넘어가게 되어 있었는데 **그 경로는 구현돼
+        // 있지 않다.** 결과적으로 로그의 마지막 말이 "웹 자동화가 아직 구현되지
+        // 않았습니다" 가 되어, 원인이 미구현인 것처럼 보였다. 진짜 원인은 그 앞의
+        // 403 이고 대응도 전혀 다르다. 없는 폴백을 가리키느니 진짜 이유로 죽는다.
+        //
+        // 특히 UNUSUAL_ACTIVITY_DETECTED 는 **더 때리면 안 되는** 신호다 —
+        // 계정이 정지될 수 있다고 응답에 적혀 있다. 재시도도 폴백도 하지 않는다.
+        if (e instanceof TypecastApiError && e.message.includes('UNUSUAL_ACTIVITY_DETECTED')) {
+          throw new Error(
+            `타입캐스트 무료 계정이 막혔습니다 (403 UNUSUAL_ACTIVITY_DETECTED).\n` +
+              `   키나 코드 문제가 아닙니다. 무료 계정으로 API 를 반복 호출한 게 걸린 것이고,\n` +
+              `   응답에 "계속하면 접근이 정지될 수 있다" 고 적혀 있어 재시도하지 않습니다.\n` +
+              `   유료 플랜이 필요합니다: https://typecast.ai/pricing/api\n` +
+              `   원문: ${e.message}`,
           );
-          mode = 'browser';
-          await synthesizeViaBrowser(normalized.text, preset, audioPath);
-        } else {
-          throw e;
         }
+        throw e;
       }
     } else {
       await synthesizeViaBrowser(normalized.text, preset, audioPath);
