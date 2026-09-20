@@ -156,6 +156,15 @@ jobs:
       # 여기서 얻을 수 있는 것과 없는 것은 docs/homestory-teardown.md 에 적어뒀고,
       # 나레이션은 사람 PC 세션(유튜브 로그인 상태)에서 받는 쪽으로 옮겼다.
 
+      # 소재 단계가 두 번 막혔는데 원인이 달랐다. 2차는 속도(검증 페이지), 5차는
+      # 상품 7건 전부 영상 0개였다. 계측 때 "car wash snow foam" 으로 3/5 를 보고
+      # "알리 보유율 60%" 라고 일반화한 게 틀렸다 — 검색어마다 다르다.
+      # 고치기 전에 제품군별로 실제 수치를 잰다.
+      - name: 알리 검색어별 상품 수·영상 보유율
+        if: always()
+        working-directory: shorts-factory
+        run: npx tsx src/probe-ali-yield.ts
+
       - name: 계측 원본 업로드
         if: always()
         uses: actions/upload-artifact@v4

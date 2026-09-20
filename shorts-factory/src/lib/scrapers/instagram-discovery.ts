@@ -168,18 +168,22 @@ async function collectFromTag(
   return out;
 }
 
-/** 조회수 키 진단은 실행당 한 번만 찍는다. 릴스마다 찍으면 로그가 파묻힌다. */
-let loggedViewKeys = false;
-
 /**
  * 페이지에 박힌 JSON 에서 숫자를 줍는다.
  *
- * DOM 의 "1.2M views" 스팬만 보다가 조회수가 전부 null 로 나왔다. 그 상태로는
- * **해시태그에서 아무거나 고르는 것**과 같아진다 — "이미 터진 것만 고른다" 는
- * 이 시스템의 전제가 통째로 무너진다.
+ * ## 조회수는 비로그인으로 못 읽는다 (실측)
  *
- * 인스타는 같은 값을 페이지 안 JSON 에도 실어 보낸다. 그쪽이 표기 변화(단위 축약,
- * 다국어 라벨)에 영향을 안 받아 훨씬 안정적이다. DOM 은 보조로만 쓴다.
+ * DOM 스팬도 JSON 키도 다 틀려서 조회수가 계속 null 이었다. 키 이름을 더 추측하는
+ * 대신 페이지에 **실제로 있는** 숫자 키를 찍어봤더니 답이 나왔다:
+ *
+ *   oz_www_playback_speed_*, oz_www_in_play_buffer_*, oz_www_max_bandwidth_sample_count ...
+ *
+ * 전부 비디오 플레이어 설정값이고 **조회수 계열 키가 하나도 없다.** 인스타가
+ * 비로그인 릴스 페이지에는 조회수를 안 싣는다. 파싱 문제가 아니라 데이터가 없는 것이다.
+ *
+ * 그래서 좋아요를 대체 지표로 쓴다. 조회수보다 약하지만 "이 릴스가 반응을 얻었나" 는
+ * 답한다. 조회수가 필요하면 로그인 세션이 있어야 하는데, 세션을 붙이면 해시태그
+ * 탐색 자체가 0건이 된다(실측) — 지금은 둘을 동시에 가질 수 없다.
  */
 function numFromJson(html: string, keys: string[]): number | null {
   for (const key of keys) {
@@ -209,25 +213,11 @@ async function readReel(page: Page, href: string, tag: string): Promise<HotVideo
     };
   });
 
-  // JSON 이 1순위, DOM 텍스트가 2순위.
+  // 조회수는 비로그인으로 안 실린다(위 주석의 실측). 있으면 쓰고, 없으면 null 로 둔다.
   const views =
     numFromJson(html, ['video_view_count', 'play_count', 'video_play_count', 'view_count']) ??
     parseCount(data.viewsText);
   const likes = numFromJson(html, ['edge_liked_by', 'like_count']) ?? parseCount(data.likesText);
-
-  // 조회수를 또 못 읽었다. 키 이름을 계속 추측하는 대신 **실제로 뭐가 들어있는지**
-  // 한 번 찍는다. 다음 실행 로그가 답을 준다.
-  //
-  // 이게 왜 중요한가: "이미 터진 릴스만 고른다" 가 이 시스템의 전제다. 조회수가
-  // null 이면 해시태그에서 아무거나 고르는 것과 같아지고, 소싱 담당의 판단 기준이
-  // 통째로 사라진다. 경고만 찍고 넘어가면 그 상태로 매일 돈다.
-  if (views === null && !loggedViewKeys) {
-    loggedViewKeys = true;
-    const keys = [...new Set([...html.matchAll(/"(\w*(?:view|play|count)\w*)"\s*:\s*\d/gi)].map((m) => m[1]!))];
-    console.warn(
-      `인스타 조회수를 못 읽었습니다. 페이지에 있는 숫자 키들: ${keys.slice(0, 25).join(', ') || '(없음)'}`,
-    );
-  }
 
   return {
     url,

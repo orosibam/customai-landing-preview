@@ -22,10 +22,11 @@ import { fail, HandoffError, PASS, withNote, type Brief, type ReviewResult, type
 const CHARTER = `너는 쇼핑 숏폼의 상품 소싱 담당이다.
 
 너의 유일한 판단 기준은 **이미 터진 영상인가** 이다. 네 취향이나 상품에 대한
-감상은 개입시키지 않는다. 조회수가 시장의 답이고, 너는 그 답을 읽을 뿐이다.
+감상은 개입시키지 않는다. 시장의 반응이 답이고, 너는 그 답을 읽을 뿐이다.
 
 상품을 고를 때 보는 것:
-1. 조회수 — 절대적으로 높을수록 좋다. 같은 채널 안에서도 유난히 터진 게 있다.
+1. 반응 — 조회수가 있으면 조회수, 없으면 좋아요를 본다. 둘 다 없으면 그 자리는
+   비어 있는 것이니 아래 2~4번으로만 판단해라. 없는 숫자를 있다고 가정하지 마라.
 2. 영상으로 보여줄 게 있는가 — 변화가 눈에 보이거나(before/after), 동작이 있거나,
    크기·질감이 드러나는 상품이 유리하다. 말로 설명해야만 이해되는 상품은 불리하다.
 3. 해외에 같은 상품 영상이 있을 법한가 — 중국 제조 생활용품이면 거의 있다.
@@ -111,22 +112,44 @@ export const scout: TeamMember = {
 
     console.log(`${discoverySource === 'instagram' ? '인스타 릴스' : '틱톡'} 에서 후보 ${hot.length}건 확보 (시도: ${tried.join(', ')})`);
 
-    // 중복 제거 + 조회수순
+    // 중복 제거 + 반응순.
+    //
+    // 조회수로 정렬하고 싶지만 **비로그인 인스타는 조회수를 안 싣는다**(실측:
+    // 릴스 페이지의 숫자 키가 전부 oz_www_playback_speed_* 같은 플레이어 설정값이고
+    // 조회수 계열이 하나도 없다). 전부 null 인 값으로 정렬하면 순서가 사실상
+    // 무작위인데 "인기순으로 골랐다" 는 착각만 남는다.
+    //
+    // 그래서 조회수가 있으면 그걸로, 없으면 좋아요로 정렬한다. 좋아요는 조회수보다
+    // 약한 신호지만 "이 릴스가 반응을 얻었나" 는 답한다.
     const seen = new Set<string>();
     hot = hot
       .filter((v) => v.videoId && !seen.has(v.videoId) && seen.add(v.videoId))
-      .sort((a, b) => (b.views ?? 0) - (a.views ?? 0))
+      .sort((a, b) => (b.views ?? b.likes ?? 0) - (a.views ?? a.likes ?? 0))
       .slice(0, 20);
+
+    const withMetric = hot.filter((v) => (v.views ?? v.likes ?? 0) > 0).length;
+    if (withMetric === 0) {
+      // 지표가 하나도 없으면 "이미 터진 것만 고른다" 가 성립하지 않는다.
+      // 그 사실을 숨기지 않는다 — 경고 없이 돌면 매일 무작위로 고르게 된다.
+      console.warn(
+        `후보 ${hot.length}건 전부 조회수·좋아요를 못 읽었습니다. ` +
+          `이번 선정은 "터진 것" 이 아니라 해시태그 노출 순서에 가깝습니다.`,
+      );
+    }
 
     const picked = await askJson<PickResponse>(
       `채널 "${brief.channel.key}" (카테고리: ${brief.channel.category}, 타겟: ${brief.audience.label})에
 올릴 상품 1개를 고른다.
 
 아래는 ${discoverySource === 'instagram' ? '인스타그램 해시태그' : '틱톡 인기순'} 에서 긁어온 해외 영상들이다.
-조회수가 이미 검증된 것들이다.
+${
+  withMetric === 0
+    ? '⚠️ 이번엔 조회수·좋아요를 하나도 못 읽었다. "터진 것" 이라는 근거가 없으니\n캡션과 제품 자체의 영상화 적합도로만 판단해라.'
+    : '조회수가 없으면 좋아요를 봐라. 둘 다 0 이거나 없는 건 지표를 못 읽은 것이지\n반응이 없었다는 뜻이 아니다.'
+}
 
 ${JSON.stringify(
-  hot.map((v) => ({ url: v.url, caption: v.caption, views: v.views })),
+  hot.map((v) => ({ url: v.url, caption: v.caption, views: v.views, likes: v.likes })),
   null,
   2,
 )}
@@ -184,8 +207,10 @@ ${[...used].join(', ') || '(없음)'}
             external_url: source.url,
             caption: source.caption,
             views: source.views,
-            // 절대 조회수 기반. 팔로워를 못 읽는 경우가 많아 백만 단위를 1점으로 환산한다.
-            outlier_score: (source.views ?? 0) / 1_000_000,
+            // 조회수가 있으면 조회수, 없으면 좋아요. 팔로워를 못 읽는 경우가 많아
+            // 절대값을 백만 단위로 환산해 쓴다. 둘 다 없으면 0 이고, 그건
+            // "지표 없이 골랐다" 는 기록으로 남는다 — 나중에 성과를 볼 때 구분된다.
+            outlier_score: (source.views ?? source.likes ?? 0) / 1_000_000,
           },
           { onConflict: 'platform,external_id' },
         )
@@ -210,11 +235,13 @@ ${[...used].join(', ') || '(없음)'}
           platform: discoverySource,
           views: source.views,
           caption: source.caption,
-          outlierScore: (source.views ?? 0) / 1_000_000,
+          outlierScore: (source.views ?? source.likes ?? 0) / 1_000_000,
         },
       },
       'scout',
-      `"${pick.product_name_ko}" 선정. 원본 ${(source.views ?? 0).toLocaleString()}회. ${pick.rationale}`,
+      `"${pick.product_name_ko}" 선정. 원본 ` +
+        `${source.views ? `${source.views.toLocaleString()}회` : source.likes ? `좋아요 ${source.likes.toLocaleString()}` : '지표 없음'}` +
+        `. ${pick.rationale}`,
       pick.keywords_zh.length < 2
         ? '중국어 검색어 변형이 하나뿐이라 소재 담당이 못 찾을 수 있습니다.'
         : undefined,
@@ -229,8 +256,12 @@ ${[...used].join(', ') || '(없음)'}
     }
 
     const warnings: string[] = [];
-    if ((brief.reference.views ?? 0) < 300_000) {
-      warnings.push(`원본 조회수 ${brief.reference.views}회로 검증 강도가 약합니다.`);
+    if (brief.reference.outlierScore === 0) {
+      warnings.push(
+        '원본의 조회수·좋아요를 둘 다 못 읽었습니다. "이미 터진 것" 이라는 근거가 없는 선정입니다.',
+      );
+    } else if ((brief.reference.views ?? 0) === 0) {
+      warnings.push('조회수를 못 읽어 좋아요로 대체했습니다. 검증 강도가 조회수보다 약합니다.');
     }
     return { ok: true, problems: [], warnings };
   },
