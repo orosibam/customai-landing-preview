@@ -54,15 +54,33 @@ const BASES = [
 /** 액터(성우) 목록. 여기서 액터 ID 형식을 알 수 있다. */
 const ACTOR_PATHS = ['/actor', '/actors', '/voices'];
 
-async function probe(url: string, token: string, init?: RequestInit): Promise<void> {
+/**
+ * 인증 헤더 방식 후보.
+ *
+ * 실측(2026-09-20): typecast.ai/api/actor 가 Bearer 로 403, api.typecast.ai/v1/voices 가
+ * 401 을 줬다. 401 은 "그 엔드포인트는 있는데 이 인증은 아니다" 라는 뜻이라
+ * 헤더 방식이 다른 쪽을 가리킨다. 어느 쪽인지는 추측할 게 아니라 다 때려보면 된다.
+ */
+const AUTH_STYLES: { name: string; header: (t: string) => Record<string, string> }[] = [
+  { name: 'Bearer', header: (t) => ({ Authorization: `Bearer ${t}` }) },
+  { name: 'X-API-KEY', header: (t) => ({ 'X-API-KEY': t }) },
+  { name: 'Authorization(raw)', header: (t) => ({ Authorization: t }) },
+];
+
+async function probe(
+  url: string,
+  token: string,
+  style: (typeof AUTH_STYLES)[number],
+  init?: RequestInit,
+): Promise<number | null> {
   const label = url.replace(/https?:\/\//, '');
-  process.stdout.write(`  ${label.padEnd(46)} `);
+  process.stdout.write(`  ${label.padEnd(40)} ${style.name.padEnd(19)} `);
 
   try {
     const res = await fetch(url, {
       ...init,
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...style.header(token),
         'Content-Type': 'application/json',
         ...(init?.headers ?? {}),
       },
@@ -79,21 +97,15 @@ async function probe(url: string, token: string, init?: RequestInit): Promise<vo
 
     console.log(`${res.status}`);
 
-    if (res.status === 401) {
-      console.log(`     → 토큰이 거부됐습니다. Bearer 방식이 아닐 수 있습니다.`);
-      return;
-    }
-    if (res.status === 403) {
-      // 회사망·프록시가 막아도 403 이 온다. 단정하지 않고 둘 다 알려준다.
-      console.log(`     → 거부됨. 토큰 권한 문제이거나, 네트워크가 이 호스트를 막고 있습니다.`);
-      console.log(`        브라우저에서 같은 주소가 열리는지 확인해보세요.`);
-      return;
-    }
-    if (res.status === 404) return;
+    // 404·401·403 은 흔한 오답이라 한 줄로만 남긴다. 조합이 많아서 로그가 길어진다.
+    if (res.status === 404 || res.status === 401 || res.status === 403) return res.status;
 
-    console.log(`     응답 형태: ${JSON.stringify(shapeOf(body), null, 2).split('\n').join('\n     ')}`);
+    console.log(`     ✅ 통했습니다. 응답 형태:`);
+    console.log(`     ${JSON.stringify(shapeOf(body), null, 2).split('\n').join('\n     ')}`);
+    return res.status;
   } catch (e) {
     console.log(`실패 — ${(e as Error).message}`);
+    return null;
   }
 }
 
@@ -104,11 +116,29 @@ async function main(): Promise<void> {
   console.log('값은 출력하지 않습니다. 구조만 봅니다.\n');
   console.log(`토큰: 길이 ${token.length}자, ${token.slice(0, 3)}… 로 시작\n`);
 
-  console.log('1) 액터 목록 — 액터 ID 형식을 확인합니다');
+  console.log('1) 액터 목록 — 호스트 × 인증방식을 전부 때려봅니다');
+  console.log('   (200 이 뜨는 조합 하나만 찾으면 된다. 나머지는 무시해도 된다)\n');
+
+  const wins: string[] = [];
   for (const base of BASES) {
     for (const path of ACTOR_PATHS) {
-      await probe(`${base}${path}`, token);
+      for (const style of AUTH_STYLES) {
+        const status = await probe(`${base}${path}`, token, style);
+        if (status && status >= 200 && status < 300) {
+          wins.push(`${base}${path}  (${style.name})`);
+        }
+      }
     }
+  }
+
+  console.log('');
+  if (wins.length > 0) {
+    console.log(`통한 조합 ${wins.length}개:`);
+    for (const w of wins) console.log(`  ✅ ${w}`);
+  } else {
+    console.log('❌ 통한 조합이 없습니다.');
+    console.log('   401 만 나왔다면 토큰이 거부된 것이고(키를 다시 발급),');
+    console.log('   403 만 나왔다면 요금제에서 API 가 안 열린 것일 수 있습니다.');
   }
 
   console.log('\n2) 합성 요청 — 응답에 오디오 URL과 길이가 오는지 확인합니다');
@@ -118,8 +148,11 @@ async function main(): Promise<void> {
     console.log('  위 1)에서 액터 ID를 하나 골라 다시 실행하세요:');
     console.log('    export TYPECAST_PROBE_ACTOR=<액터ID>');
   } else {
+    // 1)에서 통한 인증 방식이 있으면 그걸 쓴다. 없으면 셋 다 시도한다.
+    const styles = AUTH_STYLES;
     for (const base of BASES) {
-      await probe(`${base}/speak`, token, {
+      for (const style of styles) {
+      await probe(`${base}/speak`, token, style, {
         method: 'POST',
         body: JSON.stringify({
           actor_id: actorId,
@@ -132,6 +165,7 @@ async function main(): Promise<void> {
           max_seconds: 30,
         }),
       });
+      }
     }
   }
 
