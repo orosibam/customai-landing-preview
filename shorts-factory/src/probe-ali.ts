@@ -40,7 +40,24 @@ const VIDEO_MARKERS: [string, RegExp][] = [
   ['ali 비디오 CDN', /cloud\.video\.taobao\.com|video\.alicdn\.com/gi],
 ];
 
-const BLOCK_MARKERS = ['captcha', 'punish', 'slider', '滑动验证', 'Please verify', 'nc_1_n1z'];
+/**
+ * 차단 표식.
+ *
+ * 처음엔 'captcha' · 'punish' · 'slider' 같은 일반 단어를 넣었는데 전부 거짓 경보였다.
+ * 상품 페이지가 400KB 로 멀쩡히 렌더되고 제품명까지 보이는데도 셋 다 걸렸다 —
+ * 이미지 슬라이더, 번들된 JS 에 그냥 들어 있는 단어들이다.
+ *
+ * 거짓 경보를 남겨두면 나중에 진짜 차단이 왔을 때 구분이 안 된다. 그래서 알리바바
+ * 계열의 실제 검증 페이지에만 나오는 표식으로 좁힌다.
+ */
+const BLOCK_MARKERS = [
+  'punish.aliexpress.com',
+  '_____tmd_____',
+  'nc_1_n1z',
+  '滑动验证',
+  '请拖动下方滑块',
+  'Please slide to verify',
+];
 
 function shape(url: string): string {
   try {
