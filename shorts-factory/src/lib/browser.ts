@@ -3,7 +3,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 /**
  * 브라우저 자동화 공통 래퍼.
  *
- * 레퍼런스 수집, 타오바오 소재 수집, 타입캐스트(API 불가 시), 네이버/인스타/틱톡 업로드가
+ * 레퍼런스 수집(틱톡·인스타), 타입캐스트(API 불가 시), 네이버/인스타/틱톡 업로드가
  * 전부 이걸 쓴다. 세션은 저장된 storageState 로 복원하고, 만료되면 호출부가
  * 사람이 다시 로그인하도록 대시보드에 작업을 띄운다.
  */

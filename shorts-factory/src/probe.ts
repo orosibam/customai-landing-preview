@@ -12,7 +12,8 @@ import { VOICE_PRESETS } from './lib/typecast.js';
 import { tiktokScraper } from './lib/scrapers/tiktok.js';
 import { instagramScraper } from './lib/scrapers/instagram.js';
 import { xiaohongshuScraper } from './lib/scrapers/xiaohongshu.js';
-import { collectClips } from './lib/scrapers/taobao.js';
+import { collectClips } from './lib/scrapers/ali1688.js';
+import { selfcheck } from './lib/scrapers/cn-bridge.js';
 import { outlierScore } from './lib/scrapers/types.js';
 import { closeBrowser } from './lib/browser.js';
 import { probe as probeMedia } from './lib/ffmpeg.js';
@@ -95,16 +96,32 @@ const CHECKS: Check[] = [
     },
   },
   {
-    name: 'xiaohongshu',
-    blocking: false,
+    // 아래 두 점검보다 먼저 본다. 여기서 막히면 샤오홍슈·1688 둘 다 의미가 없다.
+    name: 'cn-bridge',
+    blocking: true,
     run: async () => {
-      const refs = await xiaohongshuScraper.search({ keyword: '洗车液', limit: 3, maxAgeDays: 90 });
-      if (refs.length === 0) throw new Error('결과 0건');
-      return `${refs.length}건`;
+      const s = await selfcheck();
+      if (!s.hasInitialState) {
+        throw new Error(
+          `샤오홍슈가 HTTP ${s.xhsStatus}, ${s.xhsBytes}바이트를 줬지만 __INITIAL_STATE__ 가 ` +
+            `없습니다. TLS 지문 흉내가 안 먹히거나(curl_cffi 프로필 '${s.impersonate}') 차단된 것입니다.`,
+        );
+      }
+      return `curl_cffi(${s.impersonate}) → HTTP ${s.xhsStatus}, SSR ${s.xhsBytes}바이트, __INITIAL_STATE__ 있음`;
     },
   },
   {
-    name: 'taobao',
+    name: 'xiaohongshu',
+    blocking: false,
+    run: async () => {
+      // 검색이 아니라 피드 필터링이다. 0건이 곧 고장은 아니며, 스크래퍼가
+      // FeedMissError 로 그 둘을 구분해 던진다.
+      const refs = await xiaohongshuScraper.search({ keyword: '洗车液', limit: 3, maxAgeDays: 90 });
+      return `${refs.length}건 (피드에서 캡션 필터)`;
+    },
+  },
+  {
+    name: '1688',
     blocking: true,
     run: async () => {
       const clips = await collectClips({ keywordZh: '洗车液', limit: 5 });

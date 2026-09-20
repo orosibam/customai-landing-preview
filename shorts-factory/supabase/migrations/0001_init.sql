@@ -52,7 +52,7 @@ create table products (
   merchant_id   uuid not null references merchants(id) on delete cascade,
   external_id   text,
   title_ko      text not null,
-  -- 타오바오 검색과 샤오홍슈 검색에 같이 쓰는 중국어 표기.
+  -- 1688 검색과 샤오홍슈 피드 필터에 같이 쓰는 중국어 표기.
   -- S1에서 한 번 만들어 S2/S4가 재사용한다.
   title_zh      text,
   title_en      text,
@@ -111,7 +111,7 @@ create table blueprints (
 );
 
 -- ---------------------------------------------------------------------------
--- 소재 (타오바오 클립)
+-- 소재 (1688 상품 상세 클립 / 틱톡 중국어 검색 결과)
 -- ---------------------------------------------------------------------------
 
 create table assets (

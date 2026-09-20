@@ -21,7 +21,7 @@ npx tsx src/stage.ts report   성과 요약
 | 담당자 | 파일 | 맡은 것 |
 |---|---|---|
 | 소싱 담당 `scout` | `members/scout.ts` | 틱톡 **인기순**을 훑어 이미 터진 영상에서 상품과 레퍼런스를 한 번에 확보. 중국어 검색어 변형까지 만들어 넘긴다 |
-| 소재 담당 `sourcer` | `members/sourcer.ts` | 그 중국어 검색어로 **해외 원본** 영상 확보. 모자라면 타오바오 상품 상세 영상으로 보강 |
+| 소재 담당 `sourcer` | `members/sourcer.ts` | 그 중국어 검색어로 **해외 원본** 영상 확보. 모자라면 1688 상품 상세 영상으로 보강 |
 | 구조 분석가 `analyst` | `members/analyst.ts` | 원본에서 **골격만** 추출 — 훅 유형, 컷 배치, 설득 순서. 대사도 화면도 가져오지 않는다 |
 | 카피라이터 `writer` | `members/writer.ts` | 설계도 구조를 지키면서 한국어 구어체로 각색. 문어체가 섞이면 최대 3회 재작성 |
 | 성우 연출 `voice` | `members/voice.ts` | 타입캐스트 문장별 합성. 속도·끊어읽기 조율 |
@@ -103,8 +103,12 @@ npx tsx src/stage.ts report   성과 요약
 npm install
 npx playwright install chromium
 
+# 샤오홍슈·1688 접근용 (이 한 조각만 파이썬이다 — 아래 설명 참고)
+pip install -r scrapers-py/requirements.txt
+
 # 발음 정규화 테스트 (네트워크 불필요)
 npx tsx src/lib/korean.test.ts
+python3 scrapers-py/test_cn_media.py
 
 # 타입 검사
 npx tsc --noEmit
@@ -117,7 +121,50 @@ npx tsx src/stage.ts team
 npx tsx src/stage.ts daily
 ```
 
-DB 스키마는 `supabase/migrations/0001_init.sql` 을 Supabase 에 적용한다.
+DB 스키마는 `supabase/migrations/` 의 파일을 번호 순서대로 Supabase 에 적용한다.
+
+## 샤오홍슈 · 1688 접근 — 왜 이 한 조각만 파이썬인가
+
+파이프라인은 전부 TypeScript 인데 `scrapers-py/cn_media.py` 만 파이썬이다. 취향이 아니라
+실측 결과다.
+
+**막힌 방법** — 헤드리스 크롬(Playwright)으로 재생 페이지를 열어 미디어 응답을 가로채기:
+
+- 샤오홍슈 검색 페이지가 「로그인 후 검색결과 보기」로만 렌더된다. 검색 API 호출 자체가
+  일어나지 않으므로 가로챌 응답이 없다.
+- 게스트 쿠키를 받아 페이지 컨텍스트의 서명 함수로 직접 호출해도 `code -104` (권한 없음).
+- 타오바오에서는 상품 영상을 **한 건도** 받지 못했다.
+
+**통한 방법** — 브라우저를 아예 안 쓴다:
+
+- `curl_cffi` 로 크롬 TLS 지문을 흉내 내 SSR HTML 을 받고, 그 안의
+  `window.__INITIAL_STATE__` JSON 을 파싱한다. 로그인도 쿠키도 필요 없다.
+- 1688 은 더 쉽다. 상품 상세 HTML 에 영상 주소가 그대로 박혀 있다.
+
+node 에는 크롬 TLS 지문을 흉내 내는 검증된 수단이 없어서 그 조각만 파이썬 프로세스로
+떼어내고 `src/lib/scrapers/cn-bridge.ts` 가 호출한다.
+
+### 그래서 포기한 것
+
+| | 되는 것 | 안 되는 것 |
+|---|---|---|
+| 샤오홍슈 | `/explore` 피드, 노트 상세(영상·좋아요·수집) | **키워드 검색** (로그인 벽), 계정별 노트 목록 |
+| 1688 | 상품 검색, 상세 영상 주소 | — |
+
+샤오홍슈는 **검색을 못 한다.** 입구가 `/explore` 피드뿐이라 키워드는 피드에 뜬 노트의
+캡션을 거르는 데만 쓴다. 그래서 니치한 상품일수록 0건이 나오고, 그건 "레퍼런스가 없다"가
+아니라 "이번 피드에 안 떴다"이다. 둘을 같은 빈 배열로 돌려주면 위에서 판단을 잘못하므로
+`FeedMissError` 로 구분해 던진다.
+
+`xsec_token` 은 **게시물마다 다르다.** 피드에서 받은 토큰을 그 노트에만 써야 하고
+돌려쓰면 열리지 않는다. 그래서 피드 → 상세를 한 흐름 안에서 잇는다.
+
+### 파싱 함정 둘
+
+`__INITIAL_STATE__` 는 JSON 이 아니라 JS 리터럴이다. 값이 비면 `null` 이 아니라
+`undefined` 가 들어가 `json.loads` 가 그대로 터지고, Vue ref 가 직렬화돼 있어 실제 값이
+`_rawValue` 한 겹 아래에 있다. 둘 다 `test_cn_media.py` 가 고정해둔다 — 여기가 깨지면
+소싱이 통째로 0건이 되므로 네트워크 없이 매번 검증한다.
 
 ## Phase 0 체크리스트
 
@@ -129,8 +176,9 @@ DB 스키마는 `supabase/migrations/0001_init.sql` 을 Supabase 에 적용한�
       공개 전환이 불가능하다. 즉시 신청하고, 테스트 채널에 1건 올려 **직접 확인**한다.
 - [ ] **틱톡 인기순 탐색** — 소싱 담당이 여기서 상품과 레퍼런스를 동시에 얻는다.
       막히면 제작 라인이 첫 담당자에서 멈춘다. 가장 먼저 뚫어야 할 항목.
-- [ ] **틱톡 중국어 검색 / 타오바오** — 소재 담당의 1차·2차 경로. 해외 원본 영상이
+- [ ] **틱톡 중국어 검색 / 1688** — 소재 담당의 1차·2차 경로. 해외 원본 영상이
       실제로 잡히는가. 한국 영상은 소재로 쓰지 않으므로 대체재가 없다.
+      `npm run probe` 의 `cn-bridge` 점검이 먼저 통과해야 나머지가 의미가 있다.
 - [ ] **업로드 셀렉터 맞추기** — 네이버 클립·틱톡 업로더의 `SELECTORS` / `URLS` 는
       실물 DOM 으로 검증되지 않았다. `HEADFUL=true` 로 한 번 띄워 눈으로 맞춘다.
 - [ ] **네이버 클립** — 구독자 조건 없이 구매 링크 스티커가 붙는 유일한 채널이라
@@ -149,7 +197,10 @@ DB 스키마는 `supabase/migrations/0001_init.sql` 을 Supabase 에 적용한�
 | `TYPECAST_API_TOKEN` | 나레이션 |
 | `TYPECAST_ACTOR_*` | 선택 — 액터 ID는 `lib/typecast.ts` 에 기본값으로 있다. 성우를 바꿀 때만 덮어쓴다 |
 | `TIKTOK_STORAGE_STATE` | 틱톡 세션 JSON. 소싱·소재 담당의 탐색과 틱톡 업로드가 함께 쓴다 |
-| `XIAOHONGSHU_STORAGE_STATE`, `INSTAGRAM_STORAGE_STATE` | 브라우저 세션 JSON |
+| `INSTAGRAM_STORAGE_STATE` | 인스타 세션 JSON |
+| `XHS_EXPLORE_CHANNELS` | 선택 — 샤오홍슈 피드에서 훑을 카테고리 채널 id (쉼표 구분). 비우면 기본 피드만 본다 |
+| `XHS_FEED_SCAN_LIMIT` | 선택 — 피드를 한 번에 몇 건까지 훑을지 (기본 `60`) |
+| `PYTHON_BIN` | 선택 — `python3` 이외의 경로를 쓸 때만 |
 | `NAVER_STORAGE_STATE` | 네이버 클립 업로드용 세션 JSON |
 | `NAVER_CLIP_UPLOAD_URL`, `NAVER_CLIP_EDIT_URL`, `TIKTOK_UPLOAD_URL`, `TIKTOK_CONTENT_URL` | 업로드 화면 URL 이 바뀌었을 때만 (선택) |
 | `YOUTUBE_CREDENTIALS_*` | 채널별 OAuth (`{client_id, client_secret, refresh_token}`) |

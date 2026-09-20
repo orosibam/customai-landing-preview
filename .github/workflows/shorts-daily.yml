@@ -33,6 +33,13 @@ jobs:
           cache: npm
           cache-dependency-path: shorts-factory/package-lock.json
 
+      # 샤오홍슈·1688 접근만 파이썬이다. 크롬 TLS 지문을 흉내 내야(curl_cffi) SSR HTML 을
+      # 내주는데, node 에는 같은 일을 하는 검증된 수단이 없다. 자세한 사정은
+      # shorts-factory/scrapers-py/cn_media.py 의 머리말에 적어뒀다.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       # ubuntu-latest 러너에는 ffmpeg 가 기본 탑재되어 있다. 버전만 확인하고 넘어간다.
       - name: ffmpeg 확인
         run: ffmpeg -version | head -1
@@ -41,6 +48,10 @@ jobs:
         working-directory: shorts-factory
         run: npm ci
 
+      - name: 중국 플랫폼 접근 의존성 설치
+        working-directory: shorts-factory
+        run: pip install -r scrapers-py/requirements.txt
+
       - name: Playwright 브라우저 설치
         working-directory: shorts-factory
         run: npx playwright install --with-deps chromium
@@ -48,6 +59,12 @@ jobs:
       - name: 발음 정규화 테스트
         working-directory: shorts-factory
         run: npx tsx src/lib/korean.test.ts
+
+      # SSR 파싱은 네트워크 없이도 검증된다. 여기서 깨지면 소싱이 통째로 0건이 되므로
+      # 제작 라인을 돌리기 전에 잡는다.
+      - name: 중국 플랫폼 파싱 테스트
+        working-directory: shorts-factory/scrapers-py
+        run: python3 test_cn_media.py
 
       - name: 제작 라인 실행
         working-directory: shorts-factory
@@ -61,9 +78,16 @@ jobs:
           # 브라우저 세션(storageState JSON). 만료되면 파이프라인이 그 플랫폼만 건너뛴다.
           # 틱톡 세션은 소싱 담당(인기순 탐색)과 소재 담당(중국어 검색)이 함께 쓴다.
           # 로그인 없이도 긁히긴 하지만, 세션이 있으면 차단 빈도가 눈에 띄게 낮아진다.
+          #
+          # 샤오홍슈 세션은 여기 없다 — 로그인해도 검색이 열리지 않아서 쓸모가 없었고,
+          # 지금 경로(curl_cffi + SSR)는 로그인도 쿠키도 요구하지 않는다.
           TIKTOK_STORAGE_STATE: ${{ secrets.TIKTOK_STORAGE_STATE }}
-          XIAOHONGSHU_STORAGE_STATE: ${{ secrets.XIAOHONGSHU_STORAGE_STATE }}
           INSTAGRAM_STORAGE_STATE: ${{ secrets.INSTAGRAM_STORAGE_STATE }}
+
+          # 샤오홍슈 피드에서 훑을 카테고리 채널 id (쉼표 구분). 비워두면 기본 피드만 본다.
+          # 확인되지 않은 id 를 기본값으로 박으면 카테고리를 좁힌 줄 알면서 실제로는
+          # 기본 피드를 보게 되므로, 브라우저 주소창에서 확인한 값만 넣는다.
+          XHS_EXPLORE_CHANNELS: ${{ vars.XHS_EXPLORE_CHANNELS }}
 
           # 편집자의 소재 변형. 중복 콘텐츠 판정을 피하려는 장치라
           # 운영자가 명시적으로 켜야 한다 (기본값: 반전 끔, 확대 1.1배).
