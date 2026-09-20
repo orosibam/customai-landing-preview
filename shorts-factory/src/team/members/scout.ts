@@ -114,7 +114,11 @@ async function commitCandidate(
           // "지표 없이 골랐다" 는 기록으로 남는다 — 나중에 성과를 볼 때 구분된다.
           outlier_score: (source.views ?? source.likes ?? 0) / 1_000_000,
         },
-        { onConflict: 'platform,external_id' },
+        // 상품마다 자기 원본을 들고 있는다. 예전엔 (platform, external_id) 였는데,
+        // 같은 해시태그를 매번 긁으니 같은 릴스가 계속 다시 나오고 그때마다
+        // 앞 상품의 원본을 빼앗았다 — 소재를 12개 수확해온 뒤에 "베낄 원본이
+        // 없습니다" 로 멈추는 상품이 그렇게 생겼다 (0005 참고).
+        { onConflict: 'product_id,platform,external_id' },
       )
       .select('id')
       .single(),

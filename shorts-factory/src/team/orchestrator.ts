@@ -139,7 +139,8 @@ export async function runLine(
         throw new HandoffError(
           e.rejection.by,
           `후보 ${attempt}건이 모두 떨어졌습니다 (남은 후보 ${remaining}건).\n` +
-            rejected.map((r) => `     · ${r.titleKo} — ${r.reason.split('\n')[0]}`).join('\n'),
+            rejected.map((r) => `     · ${r.titleKo} — ${r.reason.split('\n')[0]}`).join('\n') +
+            `\n   (각 후보의 전문은 위 로그에 있습니다.)`,
           true,
         );
       }
@@ -148,6 +149,13 @@ export async function runLine(
         `  ${slotLabel} "${e.rejection.titleKo}" 퇴짜 (${e.rejection.by}). ` +
           `다음 후보로 다시 돕니다 (${attempt}/${MAX_CANDIDATE_TRIES}, 남은 후보 ${remaining}건).`,
       );
+      // 사유를 **통째로** 찍는다.
+      //
+      // 아래 요약은 후보마다 첫 줄만 싣는데(훑어보기 좋으라고), 그러다 소재 담당이
+      // 적어 보낸 수확 안내가 통째로 잘려 나갔다 — 사람이 할 일을 적어놨는데
+      // 로그 어디에도 안 나오는 상태로 한 번을 돌았다. 요약은 요약대로 두고
+      // 전문은 여기서 남긴다.
+      console.warn(`  ${e.rejection.reason}`);
     }
   }
 
