@@ -168,6 +168,9 @@ async function collectFromTag(
   return out;
 }
 
+/** 조회수 키 진단은 실행당 한 번만 찍는다. 릴스마다 찍으면 로그가 파묻힌다. */
+let loggedViewKeys = false;
+
 /**
  * 페이지에 박힌 JSON 에서 숫자를 줍는다.
  *
@@ -208,9 +211,23 @@ async function readReel(page: Page, href: string, tag: string): Promise<HotVideo
 
   // JSON 이 1순위, DOM 텍스트가 2순위.
   const views =
-    numFromJson(html, ['video_view_count', 'play_count', 'video_play_count']) ??
+    numFromJson(html, ['video_view_count', 'play_count', 'video_play_count', 'view_count']) ??
     parseCount(data.viewsText);
   const likes = numFromJson(html, ['edge_liked_by', 'like_count']) ?? parseCount(data.likesText);
+
+  // 조회수를 또 못 읽었다. 키 이름을 계속 추측하는 대신 **실제로 뭐가 들어있는지**
+  // 한 번 찍는다. 다음 실행 로그가 답을 준다.
+  //
+  // 이게 왜 중요한가: "이미 터진 릴스만 고른다" 가 이 시스템의 전제다. 조회수가
+  // null 이면 해시태그에서 아무거나 고르는 것과 같아지고, 소싱 담당의 판단 기준이
+  // 통째로 사라진다. 경고만 찍고 넘어가면 그 상태로 매일 돈다.
+  if (views === null && !loggedViewKeys) {
+    loggedViewKeys = true;
+    const keys = [...new Set([...html.matchAll(/"(\w*(?:view|play|count)\w*)"\s*:\s*\d/gi)].map((m) => m[1]!))];
+    console.warn(
+      `인스타 조회수를 못 읽었습니다. 페이지에 있는 숫자 키들: ${keys.slice(0, 25).join(', ') || '(없음)'}`,
+    );
+  }
 
   return {
     url,

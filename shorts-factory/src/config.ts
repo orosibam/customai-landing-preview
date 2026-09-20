@@ -271,8 +271,13 @@ export const UPLOAD_JITTER_MINUTES = { min: 15, max: 240 } as const;
 export const MODELS = {
   /** 설계도 추출·대본 — 품질이 결과물을 좌우하는 자리 */
   reasoning: optionalEnv('MODEL_REASONING', 'claude-opus-5'),
-  /** 분류·클립 매칭·번역 — 양이 많고 저렴해야 하는 자리 */
-  fast: optionalEnv('MODEL_FAST', 'claude-haiku-4-5-20251001'),
+  /**
+   * 분류·클립 매칭·번역 — 양이 많고 저렴해야 하는 자리.
+   *
+   * 날짜 접미사를 붙이지 않는다. 모델 ID 는 접미사 없는 형태가 정식이고,
+   * 날짜를 붙인 문자열은 언젠가 사라진다.
+   */
+  fast: optionalEnv('MODEL_FAST', 'claude-haiku-4-5'),
 } as const;
 
 // ---------------------------------------------------------------------------
