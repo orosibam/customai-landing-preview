@@ -13,10 +13,14 @@ on:
   push:
     branches:
       - 'claude/**'
+    # 경로를 하나씩 적었더니 probe-typecast.ts 를 고쳐 푸시해도 점검이 안 돌았다.
+    # 빠뜨린 걸 모른 채 결과를 기다리게 된다. 점검이 보는 것은 전부 넣는다.
     paths:
       - 'shorts-factory/scrapers-py/**'
-      - 'shorts-factory/src/lib/scrapers/**'
-      - 'shorts-factory/src/probe.ts'
+      - 'shorts-factory/src/lib/**'
+      - 'shorts-factory/src/probe*.ts'
+      - 'shorts-factory/src/config.ts'
+      - 'shorts-factory/package*.json'
       - '.github/workflows/shorts-probe.yml'
   workflow_dispatch:
 
