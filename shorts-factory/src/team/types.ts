@@ -13,6 +13,24 @@ import type { ChannelConfig } from '../config.js';
  */
 
 /** 작업 지시서. 담당자를 거칠 때마다 내용이 채워진다. */
+/** 후보 한 건. 고른 상품과 그걸 찾은 원본 영상을 함께 들고 다닌다. */
+export interface ProductCandidate {
+  productNameKo: string;
+  keywordsZh: string[];
+  keywordEn: string;
+  priceKrw: number | null;
+  rationale: string;
+  source: {
+    url: string;
+    videoId: string;
+    caption: string;
+    views: number | null;
+    likes: number | null;
+    /** 어디서 찾았는지. references.platform 에 그대로 들어간다. */
+    platform: string;
+  };
+}
+
 export interface Brief {
   runId: string;
   /** 이 건을 올릴 채널 */
@@ -30,6 +48,23 @@ export interface Brief {
     /** 왜 이 상품인가 */
     rationale: string;
   };
+
+  /**
+   * 소싱 담당이 남겨둔 다음 후보들.
+   *
+   * 아래 담당자가 퇴짜를 놓으면(예: 한국에서 안 파는 물건) 발굴을 처음부터 다시
+   * 하지 않고 여기서 다음 걸 꺼낸다. 인스타 탐색은 한 번에 2분 반이 걸려서,
+   * 후보 하나가 떨어질 때마다 다시 긁으면 재시도가 사실상 불가능해진다.
+   */
+  shortlist?: ProductCandidate[];
+
+  /**
+   * 아래에서 퇴짜 맞은 상품들. 소싱 담당이 다시 고를 때 제외 목록으로 넘긴다.
+   *
+   * 이유까지 적는 건 LLM 에게 "왜 떨어졌는지" 를 보여주기 위해서다. 이름만
+   * 빼면 같은 종류를 또 고른다.
+   */
+  rejected?: { titleKo: string; by: string; reason: string }[];
 
   /** 소싱 담당이 찾은 검증된 레퍼런스 */
   reference?: {

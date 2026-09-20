@@ -6,7 +6,16 @@ import {
 } from '../../lib/scrapers/instagram-discovery.js';
 import { db, must } from '../../lib/supabase.js';
 import { PRODUCT_COOLDOWN_DAYS } from '../../config.js';
-import { fail, HandoffError, PASS, withNote, type Brief, type ReviewResult, type TeamMember } from '../types.js';
+import {
+  fail,
+  HandoffError,
+  PASS,
+  withNote,
+  type Brief,
+  type ProductCandidate,
+  type ReviewResult,
+  type TeamMember,
+} from '../types.js';
 
 /**
  * 소싱 담당.
@@ -54,6 +63,95 @@ async function recentlyUsed(): Promise<Set<string>> {
   return new Set(((data ?? []) as { title_ko: string }[]).map((r) => r.title_ko));
 }
 
+
+/**
+ * 고른 후보를 DB 에 박고 브리프에 싣는다.
+ *
+ * 새로 발굴했든 남겨둔 후보를 꺼냈든 이 아래는 똑같다. 남은 후보는 `shortlist` 로
+ * 넘겨서, 아래에서 퇴짜가 나면 발굴 없이 다음 걸 쓸 수 있게 한다.
+ */
+async function commitCandidate(
+  brief: Brief,
+  candidate: ProductCandidate,
+  rest: ProductCandidate[],
+): Promise<Brief> {
+  const { source } = candidate;
+
+  const productRow = await must(
+    '상품 저장',
+    db()
+      .from('products')
+      .insert({
+        merchant_id: await defaultMerchantId(),
+        title_ko: candidate.productNameKo,
+        title_zh: candidate.keywordsZh[0] ?? null,
+        title_en: candidate.keywordEn,
+        price_krw: candidate.priceKrw,
+        score_reason: candidate.rationale,
+        picked_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single(),
+  );
+
+  const refRow = await must(
+    '레퍼런스 저장',
+    db()
+      .from('references')
+      .upsert(
+        {
+          product_id: (productRow as { id: string }).id,
+          // 실제로 어디서 찾았는지 그대로 적는다. 예전엔 'tiktok' 으로 박혀 있어서
+          // 인스타에서 온 레퍼런스도 틱톡으로 기록됐다 — 나중에 "어느 플랫폼의
+          // 설계도가 잘 먹혔나" 를 집계할 때 그 숫자가 통째로 틀린다.
+          platform: source.platform,
+          external_id: source.videoId,
+          external_url: source.url,
+          caption: source.caption,
+          views: source.views,
+          // 조회수가 있으면 조회수, 없으면 좋아요. 팔로워를 못 읽는 경우가 많아
+          // 절대값을 백만 단위로 환산해 쓴다. 둘 다 없으면 0 이고, 그건
+          // "지표 없이 골랐다" 는 기록으로 남는다 — 나중에 성과를 볼 때 구분된다.
+          outlier_score: (source.views ?? source.likes ?? 0) / 1_000_000,
+        },
+        { onConflict: 'platform,external_id' },
+      )
+      .select('id')
+      .single(),
+  );
+
+  return withNote(
+    {
+      ...brief,
+      shortlist: rest,
+      product: {
+        id: (productRow as { id: string }).id,
+        titleKo: candidate.productNameKo,
+        keywordsZh: candidate.keywordsZh,
+        keywordEn: candidate.keywordEn,
+        priceKrw: candidate.priceKrw,
+        rationale: candidate.rationale,
+      },
+      reference: {
+        id: (refRow as { id: string }).id,
+        url: source.url,
+        platform: source.platform,
+        views: source.views,
+        caption: source.caption,
+        outlierScore: (source.views ?? source.likes ?? 0) / 1_000_000,
+      },
+    },
+    'scout',
+    `"${candidate.productNameKo}" 선정. 원본 ` +
+      `${source.views ? `${source.views.toLocaleString()}회` : source.likes ? `좋아요 ${source.likes.toLocaleString()}` : '지표 없음'}` +
+      `. ${candidate.rationale}` +
+      (rest.length > 0 ? ` (다음 후보 ${rest.length}건 대기)` : ''),
+    candidate.keywordsZh.length < 2
+      ? '중국어 검색어 변형이 하나뿐이라 소재 담당이 못 찾을 수 있습니다.'
+      : undefined,
+  );
+}
+
 export const scout: TeamMember = {
   id: 'scout',
   role: '소싱 담당',
@@ -61,6 +159,15 @@ export const scout: TeamMember = {
   charter: CHARTER,
 
   async work(brief: Brief): Promise<Brief> {
+    // 아래에서 퇴짜가 나 다시 온 경우. 발굴을 처음부터 하지 않는다 —
+    // 인스타 탐색이 한 번에 2분 반이라, 후보 하나 떨어질 때마다 다시 긁으면
+    // 재시도라는 게 사실상 불가능해진다. 지난번에 남겨둔 후보를 꺼낸다.
+    const queued = brief.shortlist?.[0];
+    if (queued) {
+      console.log(`남겨둔 후보에서 "${queued.productNameKo}" 로 갑니다 (재발굴 없음).`);
+      return commitCandidate(brief, queued, brief.shortlist!.slice(1));
+    }
+
     const used = await recentlyUsed();
 
     let hot: HotVideo[] = [];
@@ -139,7 +246,12 @@ export const scout: TeamMember = {
 
     const picked = await askJson<PickResponse>(
       `채널 "${brief.channel.key}" (카테고리: ${brief.channel.category}, 타겟: ${brief.audience.label})에
-올릴 상품 1개를 고른다.
+올릴 상품 후보를 **좋은 순서대로 3개** 고른다.
+
+여러 개를 고르는 이유: 다음 담당자가 "이 물건이 한국에서 팔리는가" 를 확인하는데,
+거기서 떨어지면 1순위를 버리고 2순위로 간다. 후보가 하나뿐이면 그 자리에서 제작이
+통째로 멈춘다. 1순위만 성의껏 쓰고 나머지를 대충 채우지 마라 — 2·3순위가 실제로
+쓰이는 날이 온다.
 
 아래는 ${discoverySource === 'instagram' ? '인스타그램 해시태그' : '틱톡 인기순'} 에서 긁어온 해외 영상들이다.
 ${
@@ -156,7 +268,13 @@ ${JSON.stringify(
 
 최근 ${PRODUCT_COOLDOWN_DAYS}일 안에 이미 쓴 상품(다시 고르지 말 것):
 ${[...used].join(', ') || '(없음)'}
-
+${
+  (brief.rejected?.length ?? 0) > 0
+    ? `\n이번 실행에서 아래 담당자가 이미 퇴짜 놓은 것(같은 이유로 떨어질 것들도 피해라):\n` +
+      brief.rejected!.map((r) => `- ${r.titleKo}: ${r.reason}`).join('\n') +
+      '\n'
+    : ''
+}
 고른 영상에서 상품을 특정하고 다음을 채워라:
 - product_name_ko: 상품을 부르는 한국어 이름 (예: "무타공 전동커튼", "수세미 거치대")
 - keywords_zh: 이 상품을 중국 플랫폼에서 검색할 **중국어 간체 키워드 3~4개**.
@@ -166,86 +284,42 @@ ${[...used].join(', ') || '(없음)'}
 - estimated_price_krw: 추정 가격. 모르면 null.
 - rationale: 왜 이 상품인지 + 영상으로 뭘 보여줄 것인지 한 문장
 
+picks 는 **3개**, 좋은 순서대로.
 {"picks":[{"video_url":"...","product_name_ko":"...","keywords_zh":[],"keyword_en":"...","estimated_price_krw":0,"rationale":"..."}]}`,
       { tier: 'reasoning', system: CHARTER, maxTokens: 2000 },
     );
 
-    const pick = picked.picks[0];
-    if (!pick) throw new HandoffError('scout', '상품을 고르지 못했습니다.', true);
+    if (picked.picks.length === 0) {
+      throw new HandoffError('scout', '상품을 고르지 못했습니다.', true);
+    }
 
-    const source = hot.find((v) => v.url === pick.video_url) ?? hot[0]!;
-
-    const productRow = await must(
-      '상품 저장',
-      db()
-        .from('products')
-        .insert({
-          merchant_id: await defaultMerchantId(),
-          title_ko: pick.product_name_ko,
-          title_zh: pick.keywords_zh[0] ?? null,
-          title_en: pick.keyword_en,
-          price_krw: pick.estimated_price_krw,
-          score_reason: pick.rationale,
-          picked_at: new Date().toISOString(),
-        })
-        .select('id')
-        .single(),
-    );
-
-    const refRow = await must(
-      '레퍼런스 저장',
-      db()
-        .from('references')
-        .upsert(
-          {
-            product_id: (productRow as { id: string }).id,
-            // 실제로 어디서 찾았는지 그대로 적는다. 예전엔 'tiktok' 으로 박혀 있어서
-            // 인스타에서 온 레퍼런스도 틱톡으로 기록됐다 — 나중에 "어느 플랫폼의
-            // 설계도가 잘 먹혔나" 를 집계할 때 그 숫자가 통째로 틀린다.
-            platform: discoverySource,
-            external_id: source.videoId,
-            external_url: source.url,
-            caption: source.caption,
-            views: source.views,
-            // 조회수가 있으면 조회수, 없으면 좋아요. 팔로워를 못 읽는 경우가 많아
-            // 절대값을 백만 단위로 환산해 쓴다. 둘 다 없으면 0 이고, 그건
-            // "지표 없이 골랐다" 는 기록으로 남는다 — 나중에 성과를 볼 때 구분된다.
-            outlier_score: (source.views ?? source.likes ?? 0) / 1_000_000,
-          },
-          { onConflict: 'platform,external_id' },
-        )
-        .select('id')
-        .single(),
-    );
-
-    return withNote(
-      {
-        ...brief,
-        product: {
-          id: (productRow as { id: string }).id,
-          titleKo: pick.product_name_ko,
-          keywordsZh: pick.keywords_zh,
-          keywordEn: pick.keyword_en,
-          priceKrw: pick.estimated_price_krw,
-          rationale: pick.rationale,
-        },
-        reference: {
-          id: (refRow as { id: string }).id,
+    // 후보를 전부 들고 간다. 1순위가 아래에서 떨어지면 2순위로 다시 돈다.
+    const candidates: ProductCandidate[] = picked.picks.map((pick) => {
+      const source = hot.find((v) => v.url === pick.video_url) ?? hot[0]!;
+      return {
+        productNameKo: pick.product_name_ko,
+        keywordsZh: pick.keywords_zh,
+        keywordEn: pick.keyword_en,
+        priceKrw: pick.estimated_price_krw,
+        rationale: pick.rationale,
+        source: {
           url: source.url,
-          platform: discoverySource,
-          views: source.views,
+          videoId: source.videoId,
           caption: source.caption,
-          outlierScore: (source.views ?? source.likes ?? 0) / 1_000_000,
+          views: source.views,
+          likes: source.likes,
+          platform: discoverySource,
         },
-      },
-      'scout',
-      `"${pick.product_name_ko}" 선정. 원본 ` +
-        `${source.views ? `${source.views.toLocaleString()}회` : source.likes ? `좋아요 ${source.likes.toLocaleString()}` : '지표 없음'}` +
-        `. ${pick.rationale}`,
-      pick.keywords_zh.length < 2
-        ? '중국어 검색어 변형이 하나뿐이라 소재 담당이 못 찾을 수 있습니다.'
-        : undefined,
-    );
+      };
+    });
+
+    if (candidates.length === 1) {
+      console.warn(
+        '후보가 하나뿐입니다. 아래에서 퇴짜가 나면 이 건은 재발굴 없이 멈춥니다.',
+      );
+    }
+
+    return commitCandidate(brief, candidates[0]!, candidates.slice(1));
   },
 
   async review(brief: Brief): Promise<ReviewResult> {

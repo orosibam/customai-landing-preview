@@ -41,13 +41,36 @@ function buildSlots(runId: string): Brief[] {
   return slots;
 }
 
-/** 슬롯 하나를 라인에 태운다. 담당자마다 작업 → 자기검수 순으로 돈다. */
-async function runLine(brief: Brief, slotLabel: string): Promise<Brief> {
+/**
+ * 후보를 몇 번까지 갈아끼울 것인가.
+ *
+ * 소싱 담당이 후보를 3개 들고 오므로 3이면 전부 써본다. 그 이상은 재발굴이라
+ * 인스타 탐색을 다시 돌게 되고, 한 편에 8분 넘게 쓰는 건 하루 8편짜리 공장에
+ * 맞지 않는다.
+ */
+const MAX_CANDIDATE_TRIES = 3;
+
+/** 한 후보로 라인 끝까지 가본다. 담당자마다 작업 → 자기검수 순으로 돈다. */
+async function runPass(brief: Brief, slotLabel: string): Promise<Brief> {
   let current = brief;
 
   for (const member of PRODUCTION_LINE) {
     const startedAt = Date.now();
-    current = await member.work(current);
+    try {
+      current = await member.work(current);
+    } catch (e) {
+      // 퇴짜를 놓은 담당자는 자기가 무엇을 거절했는지 모른다 — 알고 있는 건
+      // 여기다. 어떤 상품이 왜 떨어졌는지 브리프에 적어서 다시 던진다.
+      // 소싱 담당이 이 목록을 보고 "같은 이유로 떨어질 것" 을 피한다.
+      if (e instanceof HandoffError && e.retryable && current.product) {
+        throw new CandidateRejected(current, {
+          titleKo: current.product.titleKo,
+          by: member.id,
+          reason: e.message,
+        });
+      }
+      throw e;
+    }
 
     const review = await member.review(current);
     const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
@@ -65,6 +88,64 @@ async function runLine(brief: Brief, slotLabel: string): Promise<Brief> {
   }
 
   return current;
+}
+
+/** 퇴짜 맞은 후보와, 그때까지의 브리프를 함께 들고 올라간다. */
+class CandidateRejected extends Error {
+  constructor(
+    readonly brief: Brief,
+    readonly rejection: { titleKo: string; by: string; reason: string },
+  ) {
+    super(rejection.reason);
+    this.name = 'CandidateRejected';
+  }
+}
+
+/**
+ * 슬롯 하나를 라인에 태운다. 후보가 떨어지면 다음 후보로 다시 돈다.
+ *
+ * ## 왜 필요한가
+ *
+ * HandoffError 에 `retryable` 플래그가 처음부터 있었는데 **아무도 읽지 않았다.**
+ * 6차 제작이 그래서 멈췄다 — 제휴 담당이 "태양광 팬 모자는 한국에 같은 물건이
+ * 없다" 며 retryable 로 던졌고(그 판단은 옳다), 그대로 실행이 끝났다. 소싱 담당이
+ * 후보 20건을 긁어왔는데 1순위 하나가 안 팔린다고 나머지를 안 써본 것이다.
+ *
+ * 쓰지 않는 플래그는 "재시도한다" 는 거짓말이므로, 읽거나 없애야 했다. 읽기로 했다.
+ */
+async function runLine(brief: Brief, slotLabel: string): Promise<Brief> {
+  let current = brief;
+
+  for (let attempt = 1; attempt <= MAX_CANDIDATE_TRIES; attempt++) {
+    try {
+      return await runPass(current, slotLabel);
+    } catch (e) {
+      if (!(e instanceof CandidateRejected)) throw e;
+
+      const rejected = [...(current.rejected ?? []), e.rejection];
+      // 남은 후보는 마지막으로 돈 브리프가 들고 있다. 여기서 버리면 다음 회차가
+      // 처음부터 발굴하게 된다.
+      current = { ...e.brief, rejected, shortlist: e.brief.shortlist ?? [] };
+
+      const remaining = current.shortlist?.length ?? 0;
+      if (attempt === MAX_CANDIDATE_TRIES || remaining === 0) {
+        throw new HandoffError(
+          e.rejection.by,
+          `후보 ${attempt}건이 모두 떨어졌습니다 (남은 후보 ${remaining}건).\n` +
+            rejected.map((r) => `     · ${r.titleKo} — ${r.reason.split('\n')[0]}`).join('\n'),
+          true,
+        );
+      }
+
+      console.warn(
+        `  ${slotLabel} "${e.rejection.titleKo}" 퇴짜 (${e.rejection.by}). ` +
+          `다음 후보로 다시 돕니다 (${attempt}/${MAX_CANDIDATE_TRIES}, 남은 후보 ${remaining}건).`,
+      );
+    }
+  }
+
+  // for 문은 위에서 반드시 return 하거나 던진다. 여기는 도달하지 않는다.
+  throw new HandoffError('orchestrator', '후보 재시도 루프가 비정상 종료했습니다.');
 }
 
 /**
