@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "capture": "tsx src/capture-session.ts",
     "probe:typecast": "tsx src/probe-typecast.ts",
-    "test:cn": "python3 scrapers-py/test_cn_media.py"
+    "test:cn": "python3 scrapers-py/test_cn_media.py",
+    "links": "tsx src/links.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",

@@ -82,10 +82,6 @@ jobs:
           TIKTOK_STORAGE_STATE: ${{ secrets.TIKTOK_STORAGE_STATE }}
           INSTAGRAM_STORAGE_STATE: ${{ secrets.INSTAGRAM_STORAGE_STATE }}
 
-          # 샤오홍슈 피드에서 훑을 카테고리 채널 id (쉼표 구분). 비워두면 기본 피드만 본다.
-          # 확인되지 않은 id 를 기본값으로 박으면 카테고리를 좁힌 줄 알면서 실제로는
-          # 기본 피드를 보게 되므로, 브라우저 주소창에서 확인한 값만 넣는다.
-          XHS_EXPLORE_CHANNELS: ${{ vars.XHS_EXPLORE_CHANNELS }}
 
           # 편집자의 소재 변형. 중복 콘텐츠 판정을 피하려는 장치라
           # 운영자가 명시적으로 켜야 한다 (기본값: 반전 끔, 확대 1.1배).

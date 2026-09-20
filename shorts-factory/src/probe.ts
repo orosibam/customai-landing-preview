@@ -112,18 +112,19 @@ const CHECKS: Check[] = [
     },
   },
   {
+    // 수확 재고가 없으면 이 둘은 돌 수 없다. 그건 코드 고장이 아니라 사람 손이
+    // 필요하다는 신호라, 다른 실패와 섞이지 않게 문구를 구분한다.
     name: 'xiaohongshu',
     blocking: false,
     run: async () => {
-      // 검색이 아니라 피드 필터링이다. 0건이 곧 고장은 아니며, 스크래퍼가
-      // FeedMissError 로 그 둘을 구분해 던진다.
       const refs = await xiaohongshuScraper.search({ keyword: '洗车液', limit: 3, maxAgeDays: 90 });
-      return `${refs.length}건 (피드에서 캡션 필터)`;
+      const withVideo = refs.filter((r) => r.videoUrl).length;
+      return `${refs.length}건 (영상 있는 것 ${withVideo}건)`;
     },
   },
   {
     name: '1688',
-    blocking: true,
+    blocking: false,
     run: async () => {
       const clips = await collectClips({ keywordZh: '洗车液', limit: 5 });
       return `상품 영상 ${clips.length}개 발견`;
@@ -166,9 +167,11 @@ async function main(): Promise<void> {
       const detail = await check.run();
       console.log(`✓  ${detail}`);
     } catch (e) {
-      const mark = check.blocking ? '✗  [차단]' : '!  [비차단]';
+      // 재고 소진은 고장이 아니다. 같은 '✗' 로 찍으면 코드를 고치려 들게 된다.
+      const isEmpty = (e as Error).name === 'LinkStoreEmptyError';
+      const mark = isEmpty ? '·  [재고없음]' : check.blocking ? '✗  [차단]' : '!  [비차단]';
       console.log(`${mark} ${(e as Error).message}`);
-      if (check.blocking) blockingFailures++;
+      if (check.blocking && !isEmpty) blockingFailures++;
     }
   }
 

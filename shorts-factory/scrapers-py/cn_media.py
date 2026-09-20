@@ -19,24 +19,30 @@ SSR HTML을 그대로 받고, 그 안에 박혀 있는 `window.__INITIAL_STATE__
 로그인도 쿠키도 필요 없다. node 에는 크롬 TLS 지문을 흉내 내는 검증된 수단이 없어서
 이 한 파일만 파이썬으로 두고 TS 쪽에서 프로세스로 부른다 (`src/lib/scrapers/cn-bridge.ts`).
 
-무엇이 되고 무엇이 안 되는가 (2026-09 기준)
--------------------------------------------
-  되는 것   · /explore 피드 SSR → 노트 목록 + 노트별 xsec_token
-            · /explore/<noteId>?xsec_token=... SSR → 영상 주소·좋아요·수집 수
-            · 1688 상품 상세 → 영상 주소
-  안 되는 것 · 샤오홍슈 키워드 검색 (로그인 벽). 피드를 받아 캡션으로 거르는 수밖에 없다.
+무엇이 되고 무엇이 안 되는가 (2026-09 기준, 전부 실측)
+------------------------------------------------------
+  되는 것   · 수확한 URL 로 노트 상세 열기 → 영상 주소·좋아요·수집 수 (로그인 불필요)
+            · 1688 상품 상세 → 영상 주소 (로그인 불필요)
+            · /explore 피드 SSR (접근 확인용. 조준에는 못 쓴다 — 아래)
+  안 되는 것 · 샤오홍슈 키워드 검색 — 로그인 벽
+            · 1688 키워드 검색 — 25KB 를 받지만 상품 데이터가 HTML 에 없다 (JS 렌더)
+            · 홈피드 반복 호출로 모수 늘리기 — 980건 뽑아 적중 0건. 무작위라 조준 불가
             · 샤오홍슈 계정별 노트 목록 (2026-09-18 재측정에서 noteId 가 전부 빈 문자열)
 
-xsec_token 은 게시물마다 다르다. 피드에서 받은 토큰을 그 노트에만 써야 하고,
-다른 노트에 돌려쓰면 열리지 않는다. 그래서 feed → note 를 한 세션 안에서 잇는다.
+그래서 **키워드 조준은 사람이 한 번 해야 한다.** 로그인된 크롬에서 검색 결과의 href 를
+통째로 수확하고(`harvest/*.js`), 그 뒤 파싱·다운로드는 전부 여기서 로그인 없이 돈다.
+
+⚠️ href 를 자르지 않는다. xsec_token 은 게시물마다 다르고 쿼리스트링에 붙어 있어서,
+id 만 남기고 토큰을 버리면 그 링크는 전부 404 다 — 실제로 그렇게 55건을 날린 적이 있다.
+이 파일의 함수들이 id+token 이 아니라 **URL 통째로** 받는 이유가 그것이다.
 
 사용법
 ------
-  python3 cn_media.py xhs-feed   --limit 30 [--channel <id>]
-  python3 cn_media.py xhs-note   --id <noteId> --token <xsecToken>
-  python3 cn_media.py ali-search --keyword 洗车液 --limit 10
-  python3 cn_media.py ali-offer  --id <offerId>
+  python3 cn_media.py xhs-note   --url '<수확한 URL 통째로>'
+  python3 cn_media.py ali-offer  --url '<수확한 상세 URL 통째로>'
+  python3 cn_media.py xhs-feed   --limit 30 [--channel <id>]   # 접근 확인용
   python3 cn_media.py download   --url <u> --referer <r> --out <path>
+  python3 cn_media.py ali-probe  --keyword 洗车液              # 계측용
   python3 cn_media.py selfcheck
 
 결과는 stdout 에 JSON 한 덩어리로 나간다. 실패는 stderr + 종료코드 1 이다.
@@ -217,9 +223,12 @@ def xhs_feed(limit: int, channel: str | None, rounds: int = 1) -> list[dict[str,
     실제로는 그날 피드에 뜬 것 중에서 고르는 것이고, 그 한계를 위에서 알아야
     할당량을 다른 플랫폼으로 돌릴지 판단할 수 있다.
 
-    한 번 부르면 27건쯤 온다(실측). 특정 상품 키워드를 맞히기엔 모수가 너무 작아서
-    피드를 여러 번 부른다 — 부를 때마다 내용이 갈리므로 중복을 걷어내면 모수가 는다.
-    얼마나 버는지는 호출부가 로그로 본다. 한 번에 몰아치지 않도록 사이를 띄운다.
+    ⚠️ **이걸로 키워드를 조준할 수 없다.** 피드는 무작위라, 반복 호출로 모수를 늘리는
+    방법은 실측에서 980건을 뽑아 적중 0건이었다. 비로그인으로는 모수를 못 늘린다는 게
+    구조적 결론이고, 키워드 조준에는 `harvest/xiaohongshu.js` 로 수확한 링크를 쓴다.
+
+    그럼 이 함수는 왜 남겨두는가: SSR 접근과 파싱이 살아 있는지 확인하는 용도다
+    (`src/probe.ts` 의 점검). 파이프라인의 소재 공급 경로는 아니다.
     """
     session = new_session()
     url = f"{XHS_ORIGIN}/explore"
@@ -288,6 +297,16 @@ def _collect_feed_notes(
 # ---------------------------------------------------------------------------
 
 
+def _note_id_from_url(url: str) -> str:
+    """
+    URL 에서 note id 를 읽는다. 기록·중복제거용이며, **이걸로 URL 을 다시 만들지 않는다.**
+    """
+    match = re.search(r"/(?:explore|discovery/item)/([0-9a-f]{8,})", url)
+    if not match:
+        raise Blocked(f"note id 를 읽을 수 없는 URL 입니다: {url}")
+    return match.group(1)
+
+
 def _first_video_url(note: dict[str, Any]) -> str | None:
     """
     영상 주소는 media.stream.<코덱>[].masterUrl 아래에 있다.
@@ -315,15 +334,26 @@ def _first_video_url(note: dict[str, Any]) -> str | None:
     return None
 
 
-def xhs_note(note_id: str, xsec_token: str) -> dict[str, Any]:
+def xhs_note(url: str) -> dict[str, Any]:
     """
-    노트 상세를 연다. xsec_token 은 **그 노트 전용**이라 다른 노트 것을 쓰면 열리지 않는다.
+    노트 상세를 연다. 인자는 **수확한 URL 통째로**다 — id 와 토큰을 따로 받아 URL 을
+    재조립하지 않는다.
+
+    이게 중요한 이유: 예전에 note id 만 남기고 xsec_token 을 벗겼다가 55건을 통째로
+    날렸다. 토큰 없는 explore/<id> 는 전부 404 다. 재조립은 그 사고를 코드로 옮겨놓는
+    짓이다 — 내가 아는 파라미터만 다시 붙이게 되고, 모르는 건 조용히 사라진다
+    (xsec_source 처럼 나중에 필요해질 수 있는 것들).
+    그래서 받은 URL 을 한 글자도 건드리지 않고 그대로 친다.
     """
+    if "xsec_token=" not in url:
+        raise Blocked(
+            f"xsec_token 이 없는 URL 입니다 — 이 링크는 열리지 않습니다 (404): {url}\n"
+            "   수확 단계에서 href 를 자르지 않았는지 확인하세요. "
+            "explore/<id> 만 남은 링크는 복구할 수 없고 다시 수확해야 합니다."
+        )
+
+    note_id = _note_id_from_url(url)
     session = new_session()
-    url = (
-        f"{XHS_ORIGIN}/explore/{quote(note_id)}"
-        f"?xsec_token={quote(xsec_token)}&xsec_source=pc_feed"
-    )
     state = unref(extract_initial_state(get_html(session, url, referer=f"{XHS_ORIGIN}/explore")))
 
     note: dict[str, Any] | None = None
@@ -352,6 +382,7 @@ def xhs_note(note_id: str, xsec_token: str) -> dict[str, Any]:
 
     return {
         "noteId": note_id,
+        # 받은 그대로 돌려준다. 호출부가 다시 열어야 할 때 재조립하지 않게 한다.
         "url": url,
         "title": (note.get("title") or "").strip(),
         "desc": (note.get("desc") or "").strip(),
@@ -547,10 +578,18 @@ def ali_search(keyword: str, limit: int) -> list[str]:
     return ids
 
 
-def ali_offer(offer_id: str) -> dict[str, Any]:
-    """상품 상세에서 영상 주소를 뽑는다. 1688 은 상세 HTML 에 그대로 박혀 있어 간단하다."""
+def ali_offer(url: str) -> dict[str, Any]:
+    """
+    상품 상세에서 영상 주소를 뽑는다. 1688 은 상세 HTML 에 그대로 박혀 있어 간단하다.
+
+    인자는 수확한 URL 통째로다. 상품 id 로 URL 을 재조립하지 않는다 —
+    샤오홍슈에서 토큰을 벗겼다가 55건을 날린 것과 같은 실수를 여기서도 안 하려는 것이다.
+    """
     session = new_session()
-    url = ALI_DETAIL.format(id=offer_id)
+    offer_match = re.search(r"/offer/(\d+)", url)
+    if not offer_match:
+        raise Blocked(f"상품 id 를 읽을 수 없는 URL 입니다: {url}")
+    offer_id = offer_match.group(1)
     html = get_html(session, url)
 
     videos: list[str] = []
@@ -621,15 +660,15 @@ def main() -> int:
     p.add_argument("--rounds", type=int, default=1)
 
     p = sub.add_parser("xhs-note")
-    p.add_argument("--id", required=True)
-    p.add_argument("--token", required=True)
+    # URL 통째로 받는다. id+token 으로 쪼개 받으면 재조립하게 되고, 그때 잃는 게 생긴다.
+    p.add_argument("--url", required=True)
 
     p = sub.add_parser("ali-search")
     p.add_argument("--keyword", required=True)
     p.add_argument("--limit", type=int, default=10)
 
     p = sub.add_parser("ali-offer")
-    p.add_argument("--id", required=True)
+    p.add_argument("--url", required=True)
 
     p = sub.add_parser("ali-probe")
     p.add_argument("--keyword", required=True)
@@ -647,12 +686,12 @@ def main() -> int:
         if args.cmd == "xhs-feed":
             result: Any = xhs_feed(args.limit, args.channel, args.rounds)
         elif args.cmd == "xhs-note":
-            result = xhs_note(args.id, args.token)
+            result = xhs_note(args.url)
             polite_sleep()
         elif args.cmd == "ali-search":
             result = ali_search(args.keyword, args.limit)
         elif args.cmd == "ali-offer":
-            result = ali_offer(args.id)
+            result = ali_offer(args.url)
             polite_sleep()
         elif args.cmd == "ali-probe":
             result = ali_probe(args.keyword)

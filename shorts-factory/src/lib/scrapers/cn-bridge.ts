@@ -119,19 +119,20 @@ export function xhsFeed(limit: number, channel?: string, rounds = 1): Promise<Xh
   return run<XhsFeedNote[]>(args);
 }
 
-/** 노트 상세. 피드에서 받은 토큰을 그대로 넘겨야 한다. */
-export function xhsNote(noteId: string, xsecToken: string): Promise<XhsNoteDetail> {
-  return run<XhsNoteDetail>(['xhs-note', '--id', noteId, '--token', xsecToken]);
+/**
+ * 노트 상세. **수확한 URL 을 통째로** 넘긴다.
+ *
+ * id 와 토큰을 따로 받아 URL 을 재조립하지 않는 이유: 예전에 토큰을 벗겼다가 55건을
+ * 통째로 날렸다. 재조립은 내가 아는 파라미터만 다시 붙이게 되고, 모르는 건 조용히
+ * 사라진다. 받은 문자열을 그대로 쓰는 게 유일하게 안전하다.
+ */
+export function xhsNote(url: string): Promise<XhsNoteDetail> {
+  return run<XhsNoteDetail>(['xhs-note', '--url', url]);
 }
 
-/** 1688 검색 → 상품 id 목록. */
-export function aliSearch(keywordZh: string, limit: number): Promise<string[]> {
-  return run<string[]>(['ali-search', '--keyword', keywordZh, '--limit', String(limit)]);
-}
-
-/** 1688 상품 상세 → 영상 주소. */
-export function aliOffer(offerId: string): Promise<AliOffer> {
-  return run<AliOffer>(['ali-offer', '--id', offerId]);
+/** 1688 상품 상세 → 영상 주소. 수확한 URL 을 통째로 넘긴다. */
+export function aliOffer(url: string): Promise<AliOffer> {
+  return run<AliOffer>(['ali-offer', '--url', url]);
 }
 
 /** 영상 파일 내려받기. 같은 TLS 지문을 써야 CDN 이 열어주므로 여기서 받는다. */
