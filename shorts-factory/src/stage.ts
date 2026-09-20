@@ -49,6 +49,20 @@ const COMMANDS: Record<string, () => Promise<void>> = {
     await runOne(arg('channel'), arg('product'));
   },
 
+  // 완성본을 로그인 없이 열리는 링크로 만든다.
+  // 아티팩트(zip)는 GitHub 로그인이 있어야 받아지고, 없으면 오류 페이지가 내려와
+  // "권한이 없어 압축 해제가 안 된다" 가 된다. 실제로 그 일이 났다.
+  share: async () => {
+    const { shareLatestRender } = await import('./share.js');
+    const url = await shareLatestRender(arg('run-id'));
+    // Actions 요약 화면에도 올린다. 로그를 뒤지지 않아도 보이게.
+    const summary = process.env.GITHUB_STEP_SUMMARY;
+    if (url && summary) {
+      const { appendFile } = await import('node:fs/promises');
+      await appendFile(summary, `\n## 완성본 링크 (7일)\n\n${url}\n`);
+    }
+  },
+
   publish: async () => {
     const runId = arg('run-id') ?? (await latestAwaitingRun());
     if (!runId) {

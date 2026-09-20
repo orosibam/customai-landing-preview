@@ -1,0 +1,43 @@
+name: 완성본 링크 만들기
+
+# 완성본을 **로그인 없이 열리는 링크**로 뽑는다.
+#
+# 아티팩트(zip)는 GitHub 로그인이 있어야 받아진다. 로그인 없이 누르면 zip 이 아니라
+# 오류 페이지가 내려오고, 압축을 풀려 하면 "권한이 없다" 로 실패한다 — 실제로 그
+# 일이 났다. 스토리지 버킷은 비공개라 주소만으로도 안 열린다.
+#
+# 서명 링크는 둘 다 피해 간다. 7일 뒤 만료되고, 버킷을 공개로 바꾸지 않는다.
+#
+# 렌더를 다시 하지 않으므로 30초면 끝나고 LLM 비용도 들지 않는다.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: '특정 실행의 완성본 (비우면 가장 최근 것)'
+        default: ''
+
+jobs:
+  share:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: shorts-factory/package-lock.json
+
+      - name: 의존성 설치
+        working-directory: shorts-factory
+        run: npm ci
+
+      - name: 링크 만들기
+        working-directory: shorts-factory
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          npx tsx src/stage.ts share ${{ inputs.run_id && format('--run-id={0}', inputs.run_id) || '' }}
