@@ -4,7 +4,7 @@ import {
   AvailabilityBlockedError,
   type Availability,
 } from '../../lib/merchants/availability.js';
-import { searchableMerchants, merchantScore, type Merchant } from '../../lib/merchants/registry.js';
+import { MERCHANTS, searchableMerchants, merchantScore, type Merchant } from '../../lib/merchants/registry.js';
 import { db, must } from '../../lib/supabase.js';
 import { fail, HandoffError, withNote, type Brief, type ReviewResult, type TeamMember } from '../types.js';
 
@@ -93,6 +93,42 @@ async function findInKorea(
   return null;
 }
 
+/**
+ * 앞선 실행이 이미 확정한 판매처를 꺼낸다.
+ *
+ * products.product_url 이 차 있으면 이 상품은 이미 "한국에서 판다" 판정을 받은
+ * 것이다. 그 판정을 매번 다시 내리면 검색 결과 순서 같은 사소한 변동에 결과가
+ * 흔들리고, 실제로 그렇게 됐다(28차가 앞서 통과한 상품을 탈락시켰다).
+ *
+ * 제휴사 정보(수수료율·기여도)는 지금 DB 에 따로 보관하지 않으므로 기본 제휴사로
+ * 되돌린다. 그 값이 필요한 건 상품 선정 점수인데 그건 이미 끝난 단계다 —
+ * 여기서는 "어디서 파는가" 만 있으면 된다.
+ */
+async function previousDecision(productId: string): Promise<Brief['offer'] | null> {
+  const { data } = await db()
+    .from('products')
+    .select('product_url, price_krw, title_ko')
+    .eq('id', productId)
+    .maybeSingle();
+
+  const row = data as { product_url: string | null; price_krw: number | null; title_ko: string } | null;
+  if (!row?.product_url) return null;
+
+  const fallback = MERCHANTS[0]!;
+  return {
+    merchantKey: fallback.key,
+    merchantLabel: fallback.label,
+    productUrl: row.product_url,
+    productTitle: row.title_ko,
+    priceKrw: row.price_krw,
+    rocket: false,
+    commissionRate: fallback.commissionRate,
+    cookieDays: fallback.cookieDays,
+    score: merchantScore(fallback),
+    needsManualLink: true,
+  };
+}
+
 export const merchandiser: TeamMember = {
   id: 'merchandiser',
   role: '제휴 담당',
@@ -102,6 +138,26 @@ export const merchandiser: TeamMember = {
   async work(brief: Brief): Promise<Brief> {
     const product = brief.product;
     if (!product) throw new HandoffError('merchandiser', '상품 정보가 넘어오지 않았습니다.');
+
+    // 이미 확정된 상품이면 다시 판단하지 않는다.
+    //
+    // 28차가 여기서 떨어졌다 — **앞선 실행에서 이미 통과시킨 바로 그 상품**이다.
+    // 매 실행마다 다나와를 새로 검색하고 LLM 이 다시 판정하니, 검색 결과 순서가
+    // 조금만 달라져도 어제 통과한 게 오늘 탈락한다. 판정이 실행마다 흔들리면
+    // 그 뒤 단계를 고치는 동안 같은 자리를 계속 다시 뚫어야 한다.
+    //
+    // 한 번 내린 판정은 기록이다. products.product_url 이 있으면 그걸 쓴다.
+    // 다시 고르고 싶으면 그 값을 비우면 된다.
+    const decided = await previousDecision(product.id);
+    if (decided) {
+      console.log(`이미 확정된 판매처를 씁니다: ${decided.productTitle} (${decided.priceKrw?.toLocaleString() ?? '?'}원)`);
+      return withNote(
+        { ...brief, offer: decided },
+        'merchandiser',
+        `확정된 판매처 재사용: ${decided.productTitle} ${decided.priceKrw?.toLocaleString() ?? '?'}원`,
+        '제휴 링크가 아직 없습니다 (파트너스 API 키는 최종승인 후 발급). 업로드 시 링크를 손으로 붙여야 합니다.',
+      );
+    }
 
     // 검색어 후보. 상품명이 길면 앞 두 단어만으로도 한 번 본다 —
     // 한국 쇼핑몰은 수식어가 붙은 긴 이름을 잘 못 찾는다.
