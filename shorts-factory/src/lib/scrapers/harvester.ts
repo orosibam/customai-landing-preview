@@ -60,7 +60,15 @@ interface SiteSpec {
   timezone: string;
 }
 
-const SITES: Record<LinkPlatform, SiteSpec> = {
+/**
+ * 자동 수확이 가능한 곳만 적는다.
+ *
+ * 알리익스프레스·타오바오는 여기 없다. 둘은 **사람 브라우저에서 상세까지 열어
+ * mp4 주소를 뽑는** 방식이라(harvest/product-video.js) 검색 결과 href 를 긁는
+ * 이 방식과 절차가 다르다. 없는 걸 있는 것처럼 Record 로 적어두면 타입은
+ * 통과하고 실행이 undefined 로 터진다.
+ */
+const SITES: Partial<Record<LinkPlatform, SiteSpec>> = {
   xiaohongshu: {
     storageEnv: 'XIAOHONGSHU_STORAGE_STATE',
     sessionKey: 'xhs',
@@ -126,6 +134,13 @@ export async function harvest(
   keyword: string,
 ): Promise<HarvestResult> {
   const site = SITES[platform];
+  if (!site) {
+    throw new Error(
+      `${platform} 는 자동 수확 대상이 아닙니다. ` +
+        `상세를 열어 mp4 주소까지 뽑아야 하므로 브라우저 스니펫을 쓰세요:\n` +
+        `     npm run links snippet video`,
+    );
+  }
   const profileDir = `.sessions/${site.sessionKey}-profile`;
   const hasProfile = existsSync(profileDir);
 

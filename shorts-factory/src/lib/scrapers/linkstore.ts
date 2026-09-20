@@ -11,13 +11,27 @@ import { db, must } from '../supabase.js';
  * xsec_token 을 벗기면 링크가 404 가 된다 (실제로 55건을 그렇게 날린 적이 있다).
  */
 
-export type LinkPlatform = 'xiaohongshu' | 'ali1688';
+/**
+ * 수확 대상.
+ *
+ * 알리익스프레스·타오바오가 뒤늦게 들어온 건 러너에서 막혔기 때문이다. 예전에는
+ * "알리는 러너에서 열리니 수확이 필요 없다" 였는데, 실측이 뒤집혔다
+ * (상세 26번 열어 0번 열림, 전부 검증 페이지).
+ */
+export type LinkPlatform = 'xiaohongshu' | 'ali1688' | 'aliexpress' | 'taobao';
 
 export interface HarvestedLink {
   id: string;
   url: string;
   title: string | null;
   keyword: string;
+  /**
+   * 판매자 상품영상 mp4 주소. 사람 브라우저에서 상세를 열어 뽑아둔 것.
+   *
+   * 비어 있으면 러너가 상세를 직접 열어야 하는데, 지금은 그게 막혀 있다.
+   * 그래서 파이프라인은 이 값이 있는 행만 쓴다(`takeVideoLinks`).
+   */
+  videoUrl: string | null;
 }
 
 /** 수확물이 바닥났을 때. 고장이 아니라 사람 손이 필요하다는 신호라 따로 구분한다. */
@@ -29,7 +43,7 @@ export class LinkStoreEmptyError extends Error {
     const how =
       platform === 'xiaohongshu'
         ? 'npm run links snippet xhs'
-        : 'npm run links snippet ali';
+        : 'npm run links snippet video';
     super(
       `${platform} / "${keyword}" 로 쓸 수 있는 수확 링크가 없습니다.\n` +
         `   이건 코드 고장이 아니라 재고 소진입니다. 비로그인으로는 키워드 검색이 안 되므로 ` +
@@ -88,5 +102,48 @@ export async function markFailed(id: string, reason: string): Promise<void> {
   await must(
     '링크 실패 기록',
     db().from('harvested_links').update({ failed_reason: reason.slice(0, 500) }).eq('id', id),
+  );
+}
+
+/**
+ * **영상 주소가 이미 붙어 있는** 수확물만 꺼낸다.
+ *
+ * 러너가 상품 상세를 못 여는 상황(실측: 알리 상세 26번 중 0번 열림, 1688·타오바오
+ * 검색도 차단)에서 유일하게 작동하는 경로다. 상세를 여는 일은 사람 브라우저가
+ * 이미 끝냈고, 러너는 CDN 에서 파일만 받는다.
+ *
+ * 키워드가 정확히 안 맞으면 다른 키워드로 내려가지 않는다 — 세차용품 영상에
+ * 주방용품 소재를 붙이는 건 실패보다 나쁘다.
+ */
+export async function takeVideoLinks(
+  keyword: string,
+  limit: number,
+  platform?: LinkPlatform,
+): Promise<HarvestedLink[]> {
+  let q = db()
+    .from('harvested_links')
+    .select('id, url, title, keyword, video_url')
+    .eq('keyword', keyword)
+    .is('used_at', null)
+    .is('failed_reason', null)
+    .not('video_url', 'is', null);
+
+  // 공급처를 안 가린다. 어디서 긁었든 판매자 상품영상이면 소재로 쓸 수 있고,
+  // 지금은 재고가 귀해서 출처를 따질 형편이 아니다.
+  if (platform) q = q.eq('platform', platform);
+
+  const rows = await must(
+    '수확 영상 조회',
+    q.order('harvested_at', { ascending: false }).limit(limit),
+  );
+
+  return (rows as { id: string; url: string; title: string | null; keyword: string; video_url: string | null }[]).map(
+    (r) => ({
+      id: r.id,
+      url: r.url,
+      title: r.title,
+      keyword: r.keyword,
+      videoUrl: r.video_url,
+    }),
   );
 }

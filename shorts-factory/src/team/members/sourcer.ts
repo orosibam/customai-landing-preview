@@ -6,6 +6,8 @@ import { downloadTikTokVideo, findOverseasFootage } from '../../lib/scrapers/tik
 import { collectClips, downloadClip } from '../../lib/scrapers/aliexpress.js';
 import { collect1688Clips, collectTaobaoClips, downloadCnClip } from '../../lib/scrapers/cn-footage.js';
 import { searchPlan } from '../../lib/scrapers/keywords.js';
+import { markFailed, markUsed, takeVideoLinks } from '../../lib/scrapers/linkstore.js';
+import { downloadVideo } from '../../lib/scrapers/cn-bridge.js';
 import { probe } from '../../lib/ffmpeg.js';
 import { uploadFile } from '../../lib/storage.js';
 import { db, must } from '../../lib/supabase.js';
@@ -53,6 +55,8 @@ interface PoolItem {
   /** assets.source_site 에 그대로 들어간다. 요약이 아니라 건별 사실이어야 한다. */
   site: string;
   referer: string;
+  /** 수확물에서 왔다면 그 행의 id. 썼는지/실패했는지를 되돌려 적는 데 쓴다. */
+  linkId?: string;
 }
 
 /** 공급처 하나. 검색어 목록과 수집·다운로드 방법을 함께 들고 있다. */
@@ -62,6 +66,28 @@ interface Supplier {
   keywords: string[];
   collect(keyword: string, want: number): Promise<{ items: PoolItem[]; note: string }>;
   download(item: PoolItem, outPath: string): Promise<void>;
+}
+
+/**
+ * 소재가 없을 때 사람이 할 일을 그 자리에 적어준다.
+ *
+ * "소재 부족" 만 적어두면 무엇을 어떻게 해야 하는지 로그를 뒤져야 한다. 특히
+ * **검색어가 한 글자라도 다르면 매칭이 안 되므로**, 긁을 때 쓸 문자열을 그대로
+ * 보여주는 게 중요하다. 사람이 옮겨 적다 틀리면 수확해놓고도 못 쓴다.
+ */
+function harvestHowTo(keywords: string[]): string {
+  return (
+    `지금 자동 수집은 세 곳 다 막혀 있습니다 (데이터센터 IP 차단, 실측).\n` +
+    `   사람 브라우저로 소재를 모으면 그 뒤는 자동으로 돕니다:\n\n` +
+    `     1) npm run links snippet video      ← 붙여넣을 코드가 나옵니다\n` +
+    `     2) 1688/알리/타오바오에서 아래 검색어로 상품을 찾고,\n` +
+    `        영상이 있는 **상품 상세 페이지**를 열어 콘솔에 붙여넣습니다\n` +
+    `        (서로 다른 상품 ${MIN_SOURCE_COUNT}곳 이상)\n` +
+    `     3) __shortsHarvest.save()  → 내려받아진 파일을\n` +
+    `        npm run links import <파일>\n\n` +
+    `   ⚠️ 검색어는 아래 중 하나를 **그대로** 입력하세요 (한 글자만 달라도 안 잡힙니다):\n` +
+    keywords.map((k) => `        ${k}`).join('\n')
+  );
 }
 
 export const sourcer: TeamMember = {
@@ -84,7 +110,53 @@ export const sourcer: TeamMember = {
     /** 실제로 소재를 준 공급처. 요약 문구는 여기서 만든다 — 추측하지 않는다. */
     const gaveFootage = new Set<string>();
 
+    // 소재 담당이 쓰는 검색어 전체. 수확 안내에 그대로 실어야 사용자가
+    // 똑같은 문자열로 긁어올 수 있다 — 한 글자만 달라도 매칭이 안 된다.
+    const allKeywords = [...product.keywordsZh, product.keywordEn].filter(
+      (k): k is string => !!k?.trim(),
+    );
+
     const suppliers: Supplier[] = [
+      {
+        /**
+         * 사람 브라우저가 미리 뽑아둔 판매자 상품영상.
+         *
+         * **지금 실제로 작동하는 유일한 공급처다.** 아래 셋은 데이터센터 IP 가
+         * 막혀서(실측 2026-09-20: 알리 상세 26번 열어 0번, 1688 검색 세 진입로
+         * 전부 차단, 타오바오 상품 id 0개) 검색조차 못 한다.
+         *
+         * 여기 있는 행은 상세를 여는 일이 이미 끝난 상태다. 러너는 CDN 에서
+         * 파일만 받으면 되고, CDN 은 상품 페이지와 다른 호스트라 정책도 다르다.
+         */
+        label: '수확 소재',
+        site: 'harvested',
+        keywords: allKeywords,
+        async collect(keyword, want) {
+          const links = await takeVideoLinks(keyword, want * 2);
+          return {
+            items: links
+              .filter((l) => l.videoUrl)
+              .map((l) => ({
+                videoUrl: l.videoUrl!,
+                productUrl: l.url,
+                site: 'harvested',
+                referer: new URL(l.url).origin + '/',
+                linkId: l.id,
+              })),
+            note: `수확 소재 "${keyword}": ${links.length}건`,
+          };
+        },
+        async download(item, path) {
+          try {
+            await downloadVideo(item.videoUrl, path, item.referer);
+            if (item.linkId) await markUsed(item.linkId);
+          } catch (e) {
+            // 실패를 남겨야 같은 링크를 매일 다시 때리지 않는다.
+            if (item.linkId) await markFailed(item.linkId, (e as Error).message);
+            throw e;
+          }
+        },
+      },
       {
         label: '알리익스프레스',
         site: 'aliexpress',
@@ -222,7 +294,8 @@ export const sourcer: TeamMember = {
           `(서로 다른 상품 최소 ${MIN_SOURCE_COUNT}곳 필요).\n` +
           `   공급처 ${suppliers.length}곳을 모두 돌았습니다:\n` +
           journal.map((j) => `     · ${j}`).join('\n') +
-          `\n   소재가 적으면 소스당 사용 길이가 ${MAX_CLIP_SEC}초 상한을 넘게 되어 편집이 불가능합니다.`,
+          `\n   소재가 적으면 소스당 사용 길이가 ${MAX_CLIP_SEC}초 상한을 넘게 되어 편집이 불가능합니다.` +
+          `\n\n   ${harvestHowTo(allKeywords)}`,
         true,
       );
     }

@@ -26,12 +26,18 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SNIPPETS: Record<string, { file: string; site: string }> = {
   xhs: { file: 'xiaohongshu.js', site: 'https://www.xiaohongshu.com (로그인 후 키워드 검색)' },
   ali: { file: 'ali1688.js', site: 'https://s.1688.com (로그인 후 중국어 키워드 검색)' },
+  // 지금 실제로 써야 하는 건 이쪽이다. 러너가 상품 상세를 못 열게 되면서
+  // (실측: 알리 26번 중 0번) 상세 URL 만 모아서는 아무 쓸모가 없어졌다.
+  video: {
+    file: 'product-video.js',
+    site: '1688 · 알리익스프레스 · 타오바오 **상품 상세 페이지** (검색 결과 아님)',
+  },
 };
 
 interface HarvestFile {
   platform: string;
   keyword: string;
-  links: { url: string; title?: string }[];
+  links: { url: string; title?: string; videoUrl?: string; platform?: string; keyword?: string }[];
 }
 
 async function printSnippet(which: string): Promise<void> {
@@ -84,12 +90,18 @@ async function importFile(path: string): Promise<void> {
     throw new Error('쓸 수 있는 링크가 한 건도 없습니다. 전부 토큰이 없습니다.');
   }
 
+  // 상품영상 수확물은 파일 하나에 여러 사이트가 섞인다(platform: 'mixed').
+  // 그때는 건별 platform 을 쓴다 — 전부 'mixed' 로 박으면 나중에 어디서 온
+  // 소재인지 알 수 없고, 출처 추적이 이 파이프라인의 법적 방어선이다.
   const rows = usable.map((link) => ({
-    platform: parsed.platform,
-    keyword: parsed.keyword ?? 'unknown',
+    platform: link.platform ?? parsed.platform,
+    keyword: link.keyword ?? parsed.keyword ?? 'unknown',
     url: link.url,
     title: link.title ?? null,
+    video_url: link.videoUrl ?? null,
   }));
+
+  const withVideo = rows.filter((r) => r.video_url).length;
 
   // 같은 키워드를 다시 긁으면 겹친다. 겹치는 건 조용히 넘기되 몇 건이 새로 들어갔는지는 센다.
   const inserted = await must(
@@ -99,9 +111,29 @@ async function importFile(path: string): Promise<void> {
 
   const newCount = (inserted as { id: string }[]).length;
   console.log(
-    `\n✅ ${parsed.platform} / "${parsed.keyword}" — 파일 ${parsed.links.length}건 중 ` +
+    `\n✅ "${parsed.keyword}" — 파일 ${parsed.links.length}건 중 ` +
       `${newCount}건 신규 저장 (${usable.length - newCount}건은 이미 있음)\n`,
   );
+
+  // 영상 주소가 없는 행은 러너가 상세를 열어야 쓸 수 있는데 지금 그게 막혀 있다.
+  // 조용히 넣어두면 "수확했는데 왜 소재가 없지" 가 된다.
+  if (withVideo === 0) {
+    console.warn(
+      `⚠️  영상 주소가 붙은 행이 0건입니다.\n` +
+        `   상세 URL 만 모은 파일은 지금 쓸 수 없습니다 — 러너가 상품 상세를\n` +
+        `   못 엽니다(실측: 알리 26번 열어 0번). harvest/product-video.js 로\n` +
+        `   상세 페이지에서 mp4 주소까지 뽑으세요:  npm run links snippet video\n`,
+    );
+  } else {
+    const products = new Set(rows.filter((r) => r.video_url).map((r) => r.url)).size;
+    console.log(`   영상 주소가 붙은 것 ${withVideo}건 / 서로 다른 상품 ${products}곳`);
+    if (products < 4) {
+      console.warn(
+        `   ⚠️  서로 다른 상품이 4곳은 돼야 영상을 만들 수 있습니다 (${4 - products}곳 부족).\n` +
+          `      같은 판매자 영상만 모으면 각도와 동작이 겹쳐 짜깁기할 게 없습니다.\n`,
+      );
+    }
+  }
 }
 
 async function status(): Promise<void> {
@@ -140,7 +172,11 @@ async function status(): Promise<void> {
 function toPlatform(alias: string): LinkPlatform {
   if (alias === 'xhs' || alias === 'xiaohongshu') return 'xiaohongshu';
   if (alias === 'ali' || alias === 'ali1688' || alias === '1688') return 'ali1688';
-  throw new Error(`알 수 없는 대상: ${alias}. 가능한 값: xhs, ali`);
+  throw new Error(
+    `알 수 없는 대상: ${alias}. 자동 수확 가능한 값: xhs, ali\n` +
+      `   알리익스프레스·타오바오는 자동 수확이 아니라 브라우저 스니펫입니다: ` +
+      `npm run links snippet video`,
+  );
 }
 
 async function runHarvest(alias: string, keyword: string): Promise<void> {
@@ -188,9 +224,12 @@ async function main(): Promise<void> {
           '  npm run links harvest <xhs|ali> <검색어>   저장된 세션으로 알아서 긁어온다\n' +
           '  npm run links status                      플랫폼·키워드별 잔량\n' +
           '\n' +
+          '  소재(상품영상) 수확 — 지금은 이 경로만 작동합니다:\n' +
+          '  npm run links snippet video               브라우저 콘솔용 코드 출력\n' +
+          '  npm run links import <파일>                내려받은 JSON 을 DB에 저장\n' +
+          '\n' +
           '  폴백 (샤오홍슈가 자동화를 막을 때만):\n' +
-          '  npm run links snippet <xhs|ali>           브라우저 콘솔용 코드 출력\n' +
-          '  npm run links import <파일>                내려받은 JSON 을 DB에 저장',
+          '  npm run links snippet <xhs|ali>           검색 결과 href 만 긁는 예전 방식',
       );
       process.exit(1);
   }
