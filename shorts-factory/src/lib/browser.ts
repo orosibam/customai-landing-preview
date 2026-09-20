@@ -22,6 +22,30 @@ async function getBrowser(): Promise<Browser> {
   return browser;
 }
 
+/**
+ * `__name is not defined` 를 막는 심.
+ *
+ * tsx(esbuild)는 함수 이름을 보존하려고 `__name(fn, "이름")` 호출을 코드에 주입한다.
+ * 그 헬퍼는 node 쪽 모듈 스코프에만 있는데, Playwright 는 evaluate 콜백을 **문자열로
+ * 직렬화해 브라우저에서 실행**한다. 그래서 콜백 안에 함수 선언이 하나라도 있으면
+ * 브라우저에 `__name` 이 없어 ReferenceError 로 터진다.
+ *
+ * 실제로 이것 때문에 인스타 릴스 읽기가 전부 실패했다. 해시태그 경로는 멀쩡히
+ * 릴스를 찾았는데(utm_source=popular_topic_grid 가 찍혀 있었다) 건별 읽기가 죽어서
+ * 발굴이 0건이 됐고, 파이프라인 첫 단계라 뒤가 통째로 멈췄다.
+ *
+ * 콜백에서 함수 선언을 빼는 식으로 한 군데씩 고칠 수도 있지만, 그건 다음에 누가
+ * 헬퍼 하나 선언하는 순간 다시 터진다. 페이지 쪽에 이름만 채워두는 게 근본적이다.
+ */
+async function installEvalShim(ctx: BrowserContext): Promise<void> {
+  await ctx.addInitScript(() => {
+    const g = globalThis as unknown as { __name?: unknown };
+    if (typeof g.__name !== 'function') {
+      g.__name = (fn: unknown) => fn;
+    }
+  });
+}
+
 export interface SessionOptions {
   /** Playwright storageState JSON. 저장된 로그인 세션을 복원할 때 쓴다. */
   storageState?: string;
@@ -31,12 +55,14 @@ export interface SessionOptions {
 
 export async function newContext(opts: SessionOptions = {}): Promise<BrowserContext> {
   const b = await getBrowser();
-  return b.newContext({
+  const ctx = await b.newContext({
     viewport: { width: 1440, height: 900 },
     locale: opts.locale ?? 'ko-KR',
     timezoneId: opts.timezone ?? 'Asia/Seoul',
     ...(opts.storageState ? { storageState: JSON.parse(opts.storageState) } : {}),
   });
+  await installEvalShim(ctx);
+  return ctx;
 }
 
 /**
@@ -97,6 +123,7 @@ export async function withPersistentContext<T>(
     timezoneId: opts.timezone ?? 'Asia/Seoul',
     ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
   });
+  await installEvalShim(ctx);
   try {
     return await fn(ctx);
   } finally {

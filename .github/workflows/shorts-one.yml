@@ -59,6 +59,13 @@ jobs:
         working-directory: shorts-factory
         run: npx tsx src/lib/korean.test.ts
 
+      # evaluate 안에 함수를 선언하면 브라우저에 __name 이 없어 터진다(tsx/esbuild).
+      # 이것 때문에 인스타 릴스 읽기가 전부 실패해 발굴이 0건이 됐던 적이 있다.
+      # 네트워크를 안 쓰고 몇 초면 끝나므로 LLM 비용을 쓰기 전에 여기서 확인한다.
+      - name: 브라우저 evaluate 심 확인
+        working-directory: shorts-factory
+        run: npx tsx src/lib/browser.shim.test.ts
+
       - name: 한 편 제작
         working-directory: shorts-factory
         env:

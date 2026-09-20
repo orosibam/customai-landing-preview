@@ -103,8 +103,8 @@ export const scout: TeamMember = {
       throw new HandoffError(
         'scout',
         `인스타·틱톡 양쪽에서 아무것도 못 찾았습니다. 시도: ${tried.join(', ')}.\n` +
-          `   인스타는 INSTAGRAM_STORAGE_STATE 세션이 있어야 해시태그 결과가 보입니다.\n` +
-          `   세션이 있는데도 0건이면 만료됐거나 셀렉터가 바뀐 것입니다.`,
+          `   인스타 해시태그는 **비로그인**이 더 잘 됩니다(실측). 세션은 폴백일 뿐입니다.\n` +
+          `   위 로그에 경로별로 무엇이 보였는지 찍혀 있으니 거기부터 보세요.`,
         true,
       );
     }
