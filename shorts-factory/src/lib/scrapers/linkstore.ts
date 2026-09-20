@@ -1,4 +1,4 @@
-import { db, must } from '../supabase.js';
+import { db, must, mustWrite } from '../supabase.js';
 
 /**
  * 수확한 링크를 꺼내 쓰는 창구.
@@ -86,7 +86,7 @@ export async function takeLinks(
 
 /** 실제로 쓴 링크에 표시한다. 같은 소재가 여러 영상에 반복되면 금방 들킨다. */
 export async function markUsed(id: string): Promise<void> {
-  await must(
+  await mustWrite(
     '링크 사용 표시',
     db().from('harvested_links').update({ used_at: new Date().toISOString() }).eq('id', id),
   );
@@ -99,7 +99,7 @@ export async function markUsed(id: string): Promise<void> {
  * 때리게 된다. 왜 못 썼는지를 남겨야 그게 토큰 만료인지 영상 없음인지 나중에 구분된다.
  */
 export async function markFailed(id: string, reason: string): Promise<void> {
-  await must(
+  await mustWrite(
     '링크 실패 기록',
     db().from('harvested_links').update({ failed_reason: reason.slice(0, 500) }).eq('id', id),
   );

@@ -147,14 +147,28 @@ export const sourcer: TeamMember = {
           };
         },
         async download(item, path) {
+          // 장부 기록이 다운로드 결과를 덮어쓰지 못하게 따로 감싼다.
+          //
+          // 처음엔 markUsed 를 그냥 await 했는데, 그게 터지면서 **성공한
+          // 다운로드 12개가 전부 "클립 실패" 로 기록됐다.** 소재가 0개가 된
+          // 진짜 이유가 다운로드가 아니라 장부였고, 로그만 봐서는 알 수가 없었다.
+          // 장부는 다음 실행을 위한 편의고, 소재 확보가 본업이다.
+          const bookkeep = async (fn: () => Promise<void>) => {
+            try {
+              await fn();
+            } catch (e) {
+              console.warn(`수확 장부 기록 실패(소재는 정상): ${(e as Error).message}`);
+            }
+          };
+
           try {
             await downloadVideo(item.videoUrl, path, item.referer);
-            if (item.linkId) await markUsed(item.linkId);
           } catch (e) {
             // 실패를 남겨야 같은 링크를 매일 다시 때리지 않는다.
-            if (item.linkId) await markFailed(item.linkId, (e as Error).message);
+            if (item.linkId) await bookkeep(() => markFailed(item.linkId!, (e as Error).message));
             throw e;
           }
+          if (item.linkId) await bookkeep(() => markUsed(item.linkId!));
         },
       },
       {
