@@ -7,12 +7,10 @@ on:
   schedule:
     # 매일 20:10 UTC = 한국시간 05:10. 아침에 확인하고 승인하면 된다.
     - cron: '10 20 * * *'
+  # 입력은 두지 않는다. dry_run 스위치가 있었지만 파이프라인 어디에도 연결돼 있지 않았다 —
+  # 끄고 돌렸다고 믿은 실행이 DB에 그대로 쓴다. 절반만 건너뛰는 dry-run 은 없는 것보다
+  # 나쁘므로, 실제로 구현할 때 다시 넣는다.
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: '렌더까지만 하고 DB 기록을 건너뛴다'
-        type: boolean
-        default: false
 
 concurrency:
   # 하루치가 겹쳐 돌면 같은 상품을 두 번 쓴다.

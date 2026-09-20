@@ -4,8 +4,9 @@
  * 나머지를 다 지어놓고 여기서 막히는 게 가장 흔한 실패다. 공장을 짓기 전에
  * 막히는 지점부터 확인한다. 네트워크가 열린 환경(로컬 또는 Actions)에서 돌린다.
  *
- *   npx tsx src/probe.ts            전체
- *   npx tsx src/probe.ts typecast   하나만
+ *   npx tsx src/probe.ts                        전체
+ *   npx tsx src/probe.ts typecast               하나만
+ *   npx tsx src/probe.ts cn-bridge xiaohongshu  골라서
  */
 
 import { VOICE_PRESETS } from './lib/typecast.js';
@@ -144,11 +145,15 @@ const CHECKS: Check[] = [
 ];
 
 async function main(): Promise<void> {
-  const only = process.argv[2];
-  const checks = only ? CHECKS.filter((c) => c.name === only) : CHECKS;
+  const only = process.argv.slice(2);
+  const checks = only.length > 0 ? CHECKS.filter((c) => only.includes(c.name)) : CHECKS;
 
-  if (checks.length === 0) {
-    console.error(`알 수 없는 점검: ${only}\n사용 가능: ${CHECKS.map((c) => c.name).join(', ')}`);
+  // 이름을 잘못 적었는데 조용히 0건을 돌리면 "점검했다" 고 착각하게 된다.
+  const unknown = only.filter((name) => !CHECKS.some((c) => c.name === name));
+  if (unknown.length > 0) {
+    console.error(
+      `알 수 없는 점검: ${unknown.join(', ')}\n사용 가능: ${CHECKS.map((c) => c.name).join(', ')}`,
+    );
     process.exit(1);
   }
 

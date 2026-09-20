@@ -1,0 +1,62 @@
+name: 소싱 경로 점검
+
+# 샤오홍슈·1688 접근이 실제로 되는지만 본다.
+#
+# 개발 컨테이너는 두 사이트가 egress 정책에 막혀 있어 여기서만 확인된다.
+# 일일 생성 워크플로우와 분리한 이유는 비용이다 — 이 점검은 LLM 도 타입캐스트도
+# 부르지 않으므로 몇 번을 돌려도 돈이 들지 않는다. 막히는 지점만 빠르게 때린다.
+#
+# 브랜치에 푸시하면 자동으로 돈다. workflow_dispatch 는 기본 브랜치에 있는 워크플로우만
+# 허용해서, 작업 브랜치에서 결과를 보려면 push 트리거가 필요하다.
+on:
+  push:
+    branches:
+      - 'claude/**'
+    paths:
+      - 'shorts-factory/scrapers-py/**'
+      - 'shorts-factory/src/lib/scrapers/**'
+      - 'shorts-factory/src/probe.ts'
+      - '.github/workflows/shorts-probe.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: shorts-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: shorts-factory/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 의존성 설치
+        working-directory: shorts-factory
+        run: |
+          npm ci
+          pip install -r scrapers-py/requirements.txt
+
+      # 네트워크 없이도 도는 파싱 테스트. 여기가 깨지면 아래는 볼 필요가 없다.
+      - name: SSR 파싱 테스트
+        working-directory: shorts-factory
+        run: python3 scrapers-py/test_cn_media.py
+
+      # 세 점검을 한 번에 돌린다. 차단 항목이 있으면 0이 아닌 코드로 끝나므로
+      # 실패가 로그에 그대로 드러난다 — 조용히 통과한 척하지 않는다.
+      #
+      # 브라우저는 띄우지 않는다. 샤오홍슈·1688 둘 다 이제 HTTP 만 쓴다
+      # (그래서 playwright install 단계가 없다).
+      - name: 샤오홍슈 · 1688 접근 점검
+        working-directory: shorts-factory
+        run: npx tsx src/probe.ts cn-bridge xiaohongshu 1688
