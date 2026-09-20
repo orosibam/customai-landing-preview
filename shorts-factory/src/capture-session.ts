@@ -105,6 +105,25 @@ const TARGETS: Target[] = [
       'QR 로그인이면 휴대폰 앱으로 스캔하시면 됩니다.',
   },
   {
+    key: 'instagram',
+    label: '인스타그램',
+    loginUrl: 'https://www.instagram.com/accounts/login/',
+    verifyUrl: 'https://www.instagram.com/',
+    loggedInSelector: '[aria-label="홈"], [aria-label="Home"], svg[aria-label="새로운 소식"], a[href="/direct/inbox/"]',
+    // 업로드가 아니라 **소재 발굴**용이다. 남의 공개 릴스를 읽는 데만 쓴다.
+    // 업로드는 공식 Content Publishing API 로 간다(instagram-setup.md).
+    // 해시태그 탐색은 비로그인이면 로그인 화면으로 막힌다. 그걸로 확인한다.
+    capability: {
+      url: 'https://www.instagram.com/explore/tags/carcleaning/',
+      blocked: /accounts\/login|Log in to Instagram|Sign up to see|로그인하여 계속/,
+      what: '해시태그 탐색',
+    },
+    secretName: 'INSTAGRAM_STORAGE_STATE',
+    hint:
+      '해외에서 터진 릴스를 찾는 소재 발굴에 쓰입니다. 업로드에는 쓰지 않습니다. ' +
+      '⚠️ 스크래핑은 계정 제재 위험이 있으니 쇼핑 계정이 아니라 별도 부계정으로 로그인하세요.',
+  },
+  {
     key: 'ali',
     label: '1688',
     loginUrl: 'https://login.1688.com/member/signin.htm',
