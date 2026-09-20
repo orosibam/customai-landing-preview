@@ -42,6 +42,34 @@ export interface Brief {
     outlierScore: number;
   };
 
+  /**
+   * 제휴 담당이 확정한 판매처.
+   *
+   * 이게 비어 있으면 그 제품은 한국에서 살 데가 없다는 뜻이고, 영상을 만들어도
+   * 수익이 0이다. 그래서 소재를 구하기 **전에** 채워져야 한다.
+   */
+  offer?: {
+    merchantKey: string;
+    merchantLabel: string;
+    /** 쇼핑몰 상품 페이지. 제휴 링크가 아니다. */
+    productUrl: string;
+    productTitle: string;
+    priceKrw: number | null;
+    rocket: boolean;
+    commissionRate: number | null;
+    cookieDays: number | null;
+    /** 수수료율 × 기여도기간 */
+    score: number;
+    /**
+     * 제휴 링크를 아직 못 만든 상태인가.
+     *
+     * 쿠팡 파트너스 API 키는 최종승인된 회원만 받는다(실측: 생성 버튼 disabled).
+     * 키가 없으면 링크 부착이 수동이고, 그 사실을 여기 들고 다녀야 유통 담당이
+     * 링크 없이 올려버리는 일이 없다.
+     */
+    needsManualLink: boolean;
+  };
+
   /** 소재 담당이 확보한 해외 원본 */
   footage?: {
     assetIds: string[];

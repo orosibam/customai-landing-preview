@@ -1,5 +1,6 @@
 import type { TeamMember } from './types.js';
 import { scout } from './members/scout.js';
+import { merchandiser } from './members/merchandiser.js';
 import { sourcer } from './members/sourcer.js';
 import { analyst } from './members/analyst.js';
 import { writer } from './members/writer.js';
@@ -19,8 +20,11 @@ import { growth } from './members/growth.js';
  * 유통은 사람이 승인한 뒤에, 성장 분석은 배포 며칠 뒤에 각각 따로 돈다.
  */
 export const PRODUCTION_LINE: TeamMember[] = [
-  scout, // 소싱 담당   — 틱톡 인기순에서 터진 상품·영상 발굴
-  sourcer, // 소재 담당   — 중국어 검색으로 해외 원본 확보
+  scout, // 소싱 담당   — 해외 인스타 릴스에서 터진 상품·영상 발굴
+  // 제휴 담당이 소재 담당보다 앞에 있는 게 핵심이다. 소재·대본·렌더를 다 하고 나서
+  // "한국에서 살 데가 없네" 를 알면 그 비용이 전부 날아간다. 여기서 버린다.
+  merchandiser, // 제휴 담당   — 한국 제휴사에서 같은 제품 찾기 (없으면 폐기)
+  sourcer, // 소재 담당   — 알리에서 해외 원본 확보
   analyst, // 구조 분석가 — 훅 유형·컷 배치·설득 순서 추출
   writer, // 카피라이터  — 타겟 화법으로 한국어 각색
   voice, // 성우 연출   — 타입캐스트 속도·피치 조율
@@ -54,5 +58,5 @@ export function describeTeam(): string {
   return lines.join('\n');
 }
 
-export { scout, sourcer, analyst, writer, voice, editor, qa, publisher, growth };
+export { scout, merchandiser, sourcer, analyst, writer, voice, editor, qa, publisher, growth };
 export * from './types.js';

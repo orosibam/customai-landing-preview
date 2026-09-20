@@ -3,6 +3,7 @@
  *
  *   npx tsx src/stage.ts team          팀 구성 출력
  *   npx tsx src/stage.ts daily         오늘치 제작 (승인 대기까지)
+ *   npx tsx src/stage.ts one --channel=<key>   한 편만 제작
  *   npx tsx src/stage.ts publish --run-id=<uuid>
  *   npx tsx src/stage.ts metrics
  *   npx tsx src/stage.ts report        성과 요약
@@ -11,7 +12,7 @@
 import { closeBrowser } from './lib/browser.js';
 import { db } from './lib/supabase.js';
 import { describeTeam } from './team/index.js';
-import { runDailyTeam } from './team/orchestrator.js';
+import { runDailyTeam, runOne } from './team/orchestrator.js';
 import { publishApproved } from './team/members/publisher.js';
 import { buildReport, collectMetrics, formatReport } from './team/members/growth.js';
 
@@ -39,6 +40,11 @@ const COMMANDS: Record<string, () => Promise<void>> = {
 
   daily: async () => {
     await runDailyTeam();
+  },
+
+  // 하루치를 돌리기 전에 한 편이 끝까지 가는지 본다.
+  one: async () => {
+    await runOne(arg('channel'));
   },
 
   publish: async () => {

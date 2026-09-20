@@ -65,6 +65,82 @@ async function runLine(brief: Brief, slotLabel: string): Promise<Brief> {
   return current;
 }
 
+/**
+ * 한 편만 만든다.
+ *
+ * 하루치 8편을 돌리기 전에 **한 편이 끝까지 가는지** 봐야 한다. 8개를 동시에 돌리면
+ * 어느 단계가 왜 막혔는지 로그가 섞여서 안 보이고, 막히는 곳이 있으면 LLM 비용을
+ * 8배로 태우고 나서 알게 된다.
+ *
+ * 채널은 인자로 고른다. 안 고르면 첫 번째 채널을 쓴다.
+ */
+export async function runOne(channelKey?: string): Promise<SlotOutcome> {
+  const channel = channelKey
+    ? CHANNELS.find((c) => c.key === channelKey)
+    : CHANNELS[0];
+
+  if (!channel) {
+    throw new Error(
+      `채널 "${channelKey}" 를 찾을 수 없습니다. ` +
+        `가능한 값: ${CHANNELS.map((c) => c.key).join(', ')}`,
+    );
+  }
+
+  const runDate = new Date().toISOString().slice(0, 10);
+  const runId = await openRun(runDate);
+  const key: AudienceKey =
+    channel.audience ?? PLATFORM_DEFAULT_AUDIENCE[channel.platform] ?? 'general';
+  const brief: Brief = { runId, channel, audience: audienceFor(key), notes: [] };
+
+  console.log(`\n=== 한 편 제작: ${channel.key} (${channel.category}) ===\n`);
+  const label = `[${channel.key}]`;
+  const startedAt = Date.now();
+
+  try {
+    const done = await runLine(brief, label);
+    await db()
+      .from('runs')
+      .update({
+        status: 'awaiting_approval',
+        cost_usd: estimateCostUsd(),
+        finished_at: new Date().toISOString(),
+      })
+      .eq('id', runId);
+
+    console.log(`\n=== 완성: ${done.product?.titleKo} ===`);
+    console.log(`실행 id: ${runId}`);
+    for (const n of done.notes) {
+      console.log(`  [${n.from}] ${n.message}`);
+      if (n.caveat) console.log(`      주의: ${n.caveat}`);
+    }
+    console.log(`LLM 비용 약 $${estimateCostUsd().toFixed(2)} · ${((Date.now() - startedAt) / 1000).toFixed(0)}초`);
+
+    return {
+      channelKey: channel.key,
+      slotIndex: 0,
+      ok: true,
+      ...(done.product?.titleKo ? { productTitle: done.product.titleKo } : {}),
+      handoffs: done.notes.map((n) => ({
+        from: n.from,
+        message: n.message,
+        ...(n.caveat ? { caveat: n.caveat } : {}),
+      })),
+    };
+  } catch (e) {
+    const failedAt = e instanceof HandoffError ? e.member : 'unknown';
+    await db()
+      .from('runs')
+      .update({ status: 'failed', finished_at: new Date().toISOString() })
+      .eq('id', runId);
+    // 어디서 막혔는지가 전부다. 이 정보 없이 다시 돌리면 같은 곳에서 또 막힌다.
+    console.error(`\n=== 중단: [${failedAt}] 단계 ===`);
+    console.error((e as Error).message);
+    throw e;
+  } finally {
+    await closeBrowser();
+  }
+}
+
 export async function runDailyTeam(): Promise<SlotOutcome[]> {
   const runDate = new Date().toISOString().slice(0, 10);
   const runId = await openRun(runDate);
