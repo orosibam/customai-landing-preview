@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>개인정보처리방침 — 쇼핑쇼츠 자동 업로드 도구</title>
+<meta name="description" content="YouTube Data API 를 이용해 운영자 본인의 채널에만 영상을 업로드하는 개인용 도구의 개인정보처리방침">
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+    font: 16px/1.75 -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    color: #1a1a1a;
+    background: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e8e8e8; background: #141414; }
+    code { background: #262626; }
+    hr { border-color: #333; }
+  }
+  h1 { font-size: 26px; line-height: 1.35; margin: 0 0 6px; }
+  h2 { font-size: 18px; margin: 36px 0 10px; }
+  .updated { color: #777; font-size: 14px; margin: 0 0 28px; }
+  ul { padding-left: 20px; }
+  li { margin: 6px 0; }
+  code { background: #f2f2f0; padding: 1px 5px; border-radius: 3px; font-size: 14px; }
+  hr { border: none; border-top: 1px solid #e5e5e5; margin: 36px 0; }
+  .note { font-size: 14px; color: #666; }
+</style>
+</head>
+<body>
+
+<h1>개인정보처리방침</h1>
+<p class="updated">쇼핑쇼츠 자동 업로드 도구 · 최종 수정일 2026년 9월 20일</p>
+
+<p>
+  이 문서는 운영자가 <strong>본인 소유의 채널에만</strong> 영상을 업로드하기 위해 사용하는
+  개인용 자동화 도구(이하 “본 도구”)의 개인정보 처리 방침입니다.
+  본 도구는 일반 이용자에게 제공되는 서비스가 아니며, 회원 가입 기능이 없습니다.
+</p>
+
+<h2>1. 수집하는 정보</h2>
+<p>본 도구는 <strong>제3자의 개인정보를 수집하지 않습니다.</strong> 처리하는 정보는 운영자 본인의 것뿐입니다.</p>
+<ul>
+  <li><strong>OAuth 인증 토큰</strong> — 운영자 본인의 YouTube 채널에 영상을 업로드하기 위한 접근 토큰 및 갱신 토큰</li>
+  <li><strong>채널 식별자</strong> — 업로드 대상 채널의 ID</li>
+  <li><strong>업로드 결과</strong> — 업로드된 영상의 ID, 게시 시각, 조회수 등 공개 통계</li>
+</ul>
+<p>
+  시청자의 개인정보, 댓글 작성자 정보, 기기 정보, 위치 정보, 광고 식별자는
+  수집하지도 저장하지도 않습니다.
+</p>
+
+<h2>2. 이용 목적</h2>
+<ul>
+  <li>운영자 본인 채널에 영상 업로드 및 메타데이터(제목·설명) 설정</li>
+  <li>업로드된 영상의 성과 집계 및 운영 판단</li>
+</ul>
+<p>수집한 정보를 위 목적 외의 용도로 사용하지 않습니다.</p>
+
+<h2>3. 이용하는 API 및 범위</h2>
+<ul>
+  <li><code>YouTube Data API v3</code> — 영상 업로드, 메타데이터 수정, 댓글 게시</li>
+  <li><code>YouTube Analytics API</code> — 운영자 본인 채널의 성과 조회</li>
+</ul>
+<p>
+  본 도구의 YouTube API 이용에는
+  <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener">YouTube 서비스 약관</a>이 적용되며,
+  Google 의 개인정보 처리에 대해서는
+  <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google 개인정보처리방침</a>을 따릅니다.
+</p>
+
+<h2>4. 보관 및 파기</h2>
+<ul>
+  <li>인증 토큰은 운영자가 통제하는 비공개 저장소(암호화된 시크릿 저장소)에만 보관합니다.</li>
+  <li>토큰은 제3자에게 제공하거나 판매하지 않으며, 외부로 전송하지 않습니다.</li>
+  <li>운영자는 언제든지
+    <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google 계정 권한 관리</a>
+    에서 본 도구의 접근 권한을 철회할 수 있으며, 철회 시 저장된 토큰은 즉시 폐기됩니다.</li>
+  <li>업로드 기록은 운영 목적이 끝나면 삭제합니다.</li>
+</ul>
+
+<h2>5. 제3자 제공</h2>
+<p>
+  수집한 정보를 제3자에게 제공하거나 위탁하지 않습니다.
+  광고 네트워크, 분석 도구, 데이터 브로커에 전달하지 않습니다.
+</p>
+
+<h2>6. 보안</h2>
+<ul>
+  <li>모든 통신은 HTTPS 로 암호화됩니다.</li>
+  <li>인증 정보는 소스 코드에 포함하지 않고 환경변수·시크릿 저장소로만 주입합니다.</li>
+  <li>본 도구는 공개 인터페이스를 제공하지 않으므로 외부에서 접근할 수 있는 지점이 없습니다.</li>
+</ul>
+
+<h2>7. 아동의 개인정보</h2>
+<p>본 도구는 아동을 대상으로 하지 않으며, 아동의 개인정보를 수집하지 않습니다.</p>
+
+<h2>8. 변경 고지</h2>
+<p>이 방침이 변경되면 이 페이지에 수정일과 함께 게시합니다.</p>
+
+<h2>9. 문의</h2>
+<p>
+  본 방침에 대한 문의는 이 저장소의
+  <a href="https://github.com/orosibam/customai-landing-preview/issues" target="_blank" rel="noopener">이슈</a>
+  로 남겨주시기 바랍니다.
+</p>
+
+<hr>
+<p class="note">
+  This is the privacy policy for a personal automation tool that uploads videos
+  only to channels owned by its operator via the YouTube Data API. It does not
+  collect personal data from any third party and has no end users other than the
+  operator.
+</p>
+
+</body>
+</html>
