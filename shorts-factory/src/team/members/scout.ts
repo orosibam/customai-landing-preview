@@ -1,5 +1,9 @@
 import { askJson } from '../../lib/llm.js';
 import { discoverHotVideos, SEED_KEYWORDS, type HotVideo } from '../../lib/scrapers/tiktok-discovery.js';
+import {
+  discoverHotVideos as discoverReels,
+  tagsForCategory,
+} from '../../lib/scrapers/instagram-discovery.js';
 import { db, must } from '../../lib/supabase.js';
 import { PRODUCT_COOLDOWN_DAYS } from '../../config.js';
 import { fail, HandoffError, PASS, withNote, type Brief, type ReviewResult, type TeamMember } from '../types.js';
@@ -52,36 +56,60 @@ async function recentlyUsed(): Promise<Set<string>> {
 export const scout: TeamMember = {
   id: 'scout',
   role: '소싱 담당',
-  expertise: '틱톡 인기순에서 이미 터진 상품과 그 영상을 찾아낸다',
+  expertise: '해외 인스타 릴스에서 이미 터진 상품과 그 영상을 찾아낸다',
   charter: CHARTER,
 
   async work(brief: Brief): Promise<Brief> {
-    const seeds = [...brief.channel.seedKeywords, ...SEED_KEYWORDS];
     const used = await recentlyUsed();
 
     let hot: HotVideo[] = [];
     const tried: string[] = [];
+    let discoverySource: 'instagram' | 'tiktok' = 'instagram';
 
-    // 시드를 하나씩 써보다가 충분히 모이면 멈춘다.
-    for (const seed of seeds) {
-      tried.push(seed);
+    // 1차: 인스타 릴스.
+    //
+    // 틱톡이 두 겹으로 막혔다 — 러너에서 로그인 없이 게시물 목록을 안 내주고
+    // (실측: 스크롤 12회에 0건), 사용자 쪽 로그인도 횟수 제한에 걸려 있다.
+    //
+    // 시드는 **영문 해시태그**다. 「꿀템」 같은 한국어로 찾으면 이미 한국에 들어온
+    // 것만 나오고, 그러면 "해외에서 터졌지만 아직 안 들어온 포맷" 이라는 전제가
+    // 성립하지 않는다.
+    for (const tag of tagsForCategory(brief.channel.category)) {
+      tried.push(`#${tag}`);
       try {
-        const found = await discoverHotVideos(seed, { channelLimit: 3, perChannel: 6 });
-        hot.push(...found);
+        hot.push(...(await discoverReels(tag, { limit: 10 })));
         if (hot.length >= 12) break;
       } catch (e) {
-        console.warn(`시드 "${seed}" 탐색 실패: ${(e as Error).message}`);
+        console.warn(`#${tag} 탐색 실패: ${(e as Error).message}`);
+      }
+    }
+
+    // 2차: 인스타가 안 되면 틱톡으로 내려간다. 지금은 대개 0건이지만,
+    // 세션이 붙으면 살아나므로 경로를 지우지는 않는다.
+    if (hot.length === 0) {
+      discoverySource = 'tiktok';
+      for (const seed of [...brief.channel.seedKeywords, ...SEED_KEYWORDS]) {
+        tried.push(seed);
+        try {
+          hot.push(...(await discoverHotVideos(seed, { channelLimit: 3, perChannel: 6 })));
+          if (hot.length >= 12) break;
+        } catch (e) {
+          console.warn(`시드 "${seed}" 탐색 실패: ${(e as Error).message}`);
+        }
       }
     }
 
     if (hot.length === 0) {
       throw new HandoffError(
         'scout',
-        `시드 ${tried.length}개(${tried.join(', ')})로 아무것도 못 찾았습니다. ` +
-          `틱톡 검색이 막혔거나 셀렉터가 바뀌었을 수 있습니다.`,
+        `인스타·틱톡 양쪽에서 아무것도 못 찾았습니다. 시도: ${tried.join(', ')}.\n` +
+          `   인스타는 INSTAGRAM_STORAGE_STATE 세션이 있어야 해시태그 결과가 보입니다.\n` +
+          `   세션이 있는데도 0건이면 만료됐거나 셀렉터가 바뀐 것입니다.`,
         true,
       );
     }
+
+    console.log(`${discoverySource === 'instagram' ? '인스타 릴스' : '틱톡'} 에서 후보 ${hot.length}건 확보 (시도: ${tried.join(', ')})`);
 
     // 중복 제거 + 조회수순
     const seen = new Set<string>();
@@ -94,7 +122,8 @@ export const scout: TeamMember = {
       `채널 "${brief.channel.key}" (카테고리: ${brief.channel.category}, 타겟: ${brief.audience.label})에
 올릴 상품 1개를 고른다.
 
-아래는 틱톡에서 인기순으로 긁어온 영상들이다. 조회수가 이미 검증된 것들이다.
+아래는 ${discoverySource === 'instagram' ? '인스타그램 해시태그' : '틱톡 인기순'} 에서 긁어온 해외 영상들이다.
+조회수가 이미 검증된 것들이다.
 
 ${JSON.stringify(
   hot.map((v) => ({ url: v.url, caption: v.caption, views: v.views })),
@@ -147,7 +176,10 @@ ${[...used].join(', ') || '(없음)'}
         .upsert(
           {
             product_id: (productRow as { id: string }).id,
-            platform: 'tiktok',
+            // 실제로 어디서 찾았는지 그대로 적는다. 예전엔 'tiktok' 으로 박혀 있어서
+            // 인스타에서 온 레퍼런스도 틱톡으로 기록됐다 — 나중에 "어느 플랫폼의
+            // 설계도가 잘 먹혔나" 를 집계할 때 그 숫자가 통째로 틀린다.
+            platform: discoverySource,
             external_id: source.videoId,
             external_url: source.url,
             caption: source.caption,
@@ -175,7 +207,7 @@ ${[...used].join(', ') || '(없음)'}
         reference: {
           id: (refRow as { id: string }).id,
           url: source.url,
-          platform: 'tiktok',
+          platform: discoverySource,
           views: source.views,
           caption: source.caption,
           outlierScore: (source.views ?? 0) / 1_000_000,
