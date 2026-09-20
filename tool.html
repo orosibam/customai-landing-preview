@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>shorts-factory — 쇼핑쇼츠 자동 업로드 도구</title>
+<meta name="description" content="운영자 본인이 소유한 YouTube 채널에만 영상을 업로드하는 개인용 자동화 도구. YouTube Data API v3 를 사용합니다.">
+<style>
+  :root { color-scheme: light dark; --fg:#1a1a1a; --bg:#fff; --muted:#666; --line:#e5e5e5; --card:#f7f7f6; --accent:#c00; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg:#e8e8e8; --bg:#141414; --muted:#9a9a9a; --line:#333; --card:#1e1e1e; --accent:#ff4d4d; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    max-width: 820px; margin: 0 auto; padding: 40px 20px 80px;
+    font: 16px/1.75 -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    color: var(--fg); background: var(--bg);
+  }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 24px; margin-bottom: 8px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .yt { width: 44px; height: 31px; flex: none; }
+  h1 { font-size: 28px; line-height: 1.3; margin: 0; }
+  .sub { color: var(--muted); font-size: 15px; margin: 8px 0 0; }
+  h2 { font-size: 18px; margin: 36px 0 10px; }
+  ul { padding-left: 20px; } li { margin: 6px 0; }
+  code { background: var(--card); padding: 1px 5px; border-radius: 3px; font-size: 14px; }
+  .legal { margin: 28px 0 0; padding: 18px 20px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+  .legal h2 { margin: 0 0 10px; font-size: 16px; }
+  .legal a { display: inline-block; margin-right: 18px; font-weight: 600; }
+  .note { font-size: 14px; color: var(--muted); }
+  hr { border: none; border-top: 1px solid var(--line); margin: 36px 0; }
+  footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+  footer a { margin-right: 16px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <svg class="yt" viewBox="0 0 90 63" xmlns="http://www.w3.org/2000/svg" aria-label="YouTube" role="img">
+      <path fill="#FF0000" d="M87.6 9.8a11.3 11.3 0 0 0-7.9-8C72.7 0 45 0 45 0S17.3 0 10.3 1.8a11.3 11.3 0 0 0-7.9 8C.6 16.8.6 31.5.6 31.5s0 14.7 1.8 21.7a11.3 11.3 0 0 0 7.9 8C17.3 63 45 63 45 63s27.7 0 34.7-1.8a11.3 11.3 0 0 0 7.9-8c1.8-7 1.8-21.7 1.8-21.7s0-14.7-1.8-21.7z"/>
+      <path fill="#fff" d="M36 45l23-13.5L36 18z"/>
+    </svg>
+    <div>
+      <h1>shorts-factory</h1>
+      <p class="sub">운영자 본인 소유 채널 전용 · 개인용 업로드 자동화 도구</p>
+    </div>
+  </div>
+</header>
+
+<p>
+  <strong>shorts-factory</strong> 는 운영자가 직접 제작한 짧은 상품 리뷰 영상을
+  <strong>운영자 본인이 소유한 YouTube 채널에만</strong> 업로드하는 개인용 배치 도구입니다.
+  제3자에게 서비스를 제공하지 않으며, 회원 가입 기능이나 공개된 사용자 인터페이스가 없습니다.
+</p>
+
+<div class="legal">
+  <h2>정책 문서</h2>
+  <a href="./privacy.html">개인정보처리방침</a>
+  <a href="./terms.html">서비스 약관</a>
+  <p class="note" style="margin:10px 0 0;">
+    본 도구의 YouTube API 이용에는
+    <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener">YouTube 서비스 약관</a>이 적용되며,
+    Google 의 개인정보 처리에 관하여는
+    <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google 개인정보처리방침</a>을 따릅니다.
+  </p>
+</div>
+
+<h2>무엇을 하는가</h2>
+<ul>
+  <li>운영자가 만든 세로형 짧은 영상을 본인 채널에 업로드합니다.</li>
+  <li>업로드한 영상의 제목·설명 등 메타데이터를 설정합니다.</li>
+  <li>본인 채널의 공개 통계를 조회해 운영 판단에 사용합니다.</li>
+</ul>
+
+<h2>이용하는 YouTube API</h2>
+<ul>
+  <li><code>YouTube Data API v3</code> — <code>videos.insert</code> (본인 채널 업로드),
+      <code>commentThreads.insert</code> (본인 영상 고정 댓글)</li>
+  <li>요청하는 권한 범위: <code>youtube.upload</code>, <code>youtube.force-ssl</code></li>
+</ul>
+
+<h2>하지 않는 것</h2>
+<ul>
+  <li>타인 소유 채널에 접근하거나 업로드하지 않습니다.</li>
+  <li>시청자의 개인정보·댓글 작성자 정보·기기 정보를 수집하지 않습니다.</li>
+  <li>YouTube API 응답 데이터를 외부에 표시하거나 재배포·판매하지 않습니다.</li>
+  <li>광고 네트워크나 데이터 브로커에 어떤 데이터도 전달하지 않습니다.</li>
+</ul>
+
+<h2>권한 철회</h2>
+<p>
+  운영자는 언제든지
+  <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google 계정 권한 관리</a>
+  에서 본 도구의 접근 권한을 철회할 수 있으며, 철회 시 저장된 토큰은 즉시 폐기됩니다.
+</p>
+
+<h2>광고 표시</h2>
+<p>
+  제휴 링크가 포함된 영상에는 「추천·보증 등에 관한 표시·광고 심사지침」에 따라
+  경제적 이해관계 표시 문구를 영상 및 설명란에 포함합니다.
+</p>
+
+<hr>
+<p class="note">
+  <strong>English summary.</strong> shorts-factory is a personal, non-commercialized batch tool that
+  uploads short product-review videos to YouTube channels owned by its operator, using the
+  YouTube Data API v3 (<code>videos.insert</code>, <code>commentThreads.insert</code>).
+  It has no end users other than the operator, no public interface, and no sign-up.
+  It does not collect viewer data and does not display or redistribute YouTube API data outside YouTube.
+</p>
+
+<footer>
+  <a href="./privacy.html">개인정보처리방침</a>
+  <a href="./terms.html">서비스 약관</a>
+  <a href="https://github.com/orosibam/customai-landing-preview" target="_blank" rel="noopener">저장소</a>
+</footer>
+
+</body>
+</html>
