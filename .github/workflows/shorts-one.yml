@@ -49,9 +49,24 @@ jobs:
           sudo apt-get install -y -qq ffmpeg
           ffmpeg -version | head -1
 
+      # 파이썬이 없으면 1688·타오바오 공급처가 통째로 죽는다.
+      #
+      # 9차 제작에서 그대로 당했다 — 공급처를 넷으로 늘려놓고 워크플로우에는
+      # 파이썬을 안 깔아서, 새로 붙인 둘이 전부 이 한 줄로 떨어졌다:
+      #
+      #   1688 수집 실패 (无线高压水枪): curl_cffi 가 설치돼 있지 않습니다.
+      #
+      # 점검 워크플로우에는 있고 제작 워크플로우에는 없었다. 두 워크플로우가
+      # 다른 환경이라는 걸 잊으면 "점검은 되는데 제작은 안 되는" 일이 생긴다.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: 의존성 설치
         working-directory: shorts-factory
-        run: npm ci
+        run: |
+          npm ci
+          pip install -r scrapers-py/requirements.txt
 
       # 발굴(인스타)·가용성(다나와)·소재(알리) 셋 다 브라우저를 쓴다.
       - name: Playwright 브라우저 설치

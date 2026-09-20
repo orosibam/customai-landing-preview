@@ -91,12 +91,29 @@ jobs:
         working-directory: shorts-factory
         run: npx playwright install --with-deps chromium
 
-      - name: 렌더 · 나레이션 · 틱톡 점검
+      # 셋을 한 단계에 묶어놨더니 **틱톡이 늘 실패해서 나머지 둘의 상태가 안 보였다.**
+      # 틱톡이 러너에서 안 되는 건 이미 확인된 사실인데, 그것 때문에 이 칸이 항상
+      # 빨간색이라 "렌더는 되나? 성우는 되나?" 를 로그를 파야만 알 수 있었다.
+      # 쪼갠다 — 한 칸이 한 가지만 답해야 색깔이 정보가 된다.
+      - name: 렌더 점검 (ffmpeg)
+        if: always()
+        working-directory: shorts-factory
+        run: npx tsx src/probe.ts ffmpeg
+
+      - name: 나레이션 점검 (타입캐스트)
         if: always()
         working-directory: shorts-factory
         env:
           TYPECAST_API_TOKEN: ${{ secrets.TYPECAST_API_TOKEN }}
-        run: npx tsx src/probe.ts ffmpeg typecast tiktok
+        run: npx tsx src/probe.ts typecast
+
+      # 틱톡은 러너에서 목록을 안 내준다(실측: 스크롤 12회에 0건). 사용자 쪽 로그인도
+      # 횟수 제한에 걸려 있다. 고칠 수 있는 게 아니라 상태를 보는 칸이다.
+      - name: 틱톡 점검 (실패가 기본값)
+        if: always()
+        continue-on-error: true
+        working-directory: shorts-factory
+        run: npx tsx src/probe.ts tiktok
 
       # 타입캐스트가 403 을 준다. 값은 감추고 응답 구조만 찍어 원인을 좁힌다 —
       # 출력에 토큰이 섞이지 않으므로 그대로 공유해도 안전하다.
