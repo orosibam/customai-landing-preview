@@ -6,6 +6,7 @@ import { downloadTikTokVideo, findOverseasFootage } from '../../lib/scrapers/tik
 import { collectClips, downloadClip } from '../../lib/scrapers/aliexpress.js';
 import { collect1688Clips, collectTaobaoClips, downloadCnClip } from '../../lib/scrapers/cn-footage.js';
 import { searchPlan } from '../../lib/scrapers/keywords.js';
+import { findChineseOnScreen } from '../../lib/scrapers/screen-text.js';
 import { markFailed, takeVideoLinks } from '../../lib/scrapers/linkstore.js';
 import { downloadVideo } from '../../lib/scrapers/cn-bridge.js';
 import { probe } from '../../lib/ffmpeg.js';
@@ -312,6 +313,31 @@ export const sourcer: TeamMember = {
           journal.map((j) => `     · ${j}`).join('\n') +
           `\n   소재가 적으면 소스당 사용 길이가 ${MAX_CLIP_SEC}초 상한을 넘게 되어 편집이 불가능합니다.` +
           `\n\n   ${harvestHowTo(allKeywords)}`,
+        true,
+      );
+    }
+
+    // 화면에 중국어가 박힌 소재를 먼저 버린다.
+    //
+    // 1688·타오바오 판매자 영상에는 중국어 자막과 워터마크가 화면에 그대로 있다.
+    // 한국 시청자에게 그게 보이면 **한 컷 만에 "남의 나라 광고" 로 읽힌다.**
+    // 첫 완성본을 보고 사용자가 제일 먼저 지적한 것이 이것이다.
+    //
+    // 길이 검사보다 먼저 한다 — 버릴 걸 업로드까지 하고 버리면 낭비다.
+    const verdict = await findChineseOnScreen(pool.map((e) => e.path));
+    if (verdict.chinese.length > 0) {
+      console.warn(
+        `중국어가 보이는 소재 ${verdict.chinese.length}개를 버립니다: ${verdict.why}`,
+      );
+      for (const i of [...verdict.chinese].sort((a, b) => b - a)) pool.splice(i, 1);
+    }
+
+    if (pool.length < MIN_SOURCE_COUNT) {
+      throw new HandoffError(
+        'sourcer',
+        `중국어가 안 보이는 소재가 ${pool.length}개뿐입니다 (최소 ${MIN_SOURCE_COUNT}개).\n` +
+          `   판정: ${verdict.why}\n` +
+          `   같은 검색어로 상품을 더 수확하면 깨끗한 게 섞여 들어옵니다.`,
         true,
       );
     }
