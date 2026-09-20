@@ -63,6 +63,30 @@ const TARGETS: Target[] = [
     secretName: 'INPOCK_STORAGE_STATE',
     hint: '상품을 번호로 진열하는 곳입니다. 이게 없으면 영상은 나가도 수익이 0입니다.',
   },
+  {
+    key: 'xhs',
+    label: '샤오홍슈(小红书)',
+    loginUrl: 'https://www.xiaohongshu.com/explore',
+    verifyUrl: 'https://www.xiaohongshu.com/explore',
+    // 로그인하면 우상단에 내 아바타/계정 메뉴가 생긴다. 비로그인이면 로그인 버튼만 있다.
+    loggedInSelector: '.user .link-wrapper, .avatar, [class*="user-avatar"], .reds-avatar',
+    secretName: 'XIAOHONGSHU_STORAGE_STATE',
+    hint:
+      '소재 링크 수확에 쓰입니다. 비로그인으로는 키워드 검색이 아예 안 돼서 ' +
+      '이 세션이 있어야 "어떤 상품 영상을 쓸지" 를 자동으로 고를 수 있습니다. ' +
+      'QR 로그인이면 휴대폰 앱으로 스캔하시면 됩니다.',
+  },
+  {
+    key: 'ali',
+    label: '1688',
+    loginUrl: 'https://login.1688.com/member/signin.htm',
+    verifyUrl: 'https://www.1688.com',
+    loggedInSelector: '[class*="member"], [class*="user-name"], .login-info',
+    secretName: 'ALI1688_STORAGE_STATE',
+    hint:
+      '1688 검색 결과에서 상품 상세 링크를 긁어오는 데 쓰입니다. ' +
+      '검색 페이지가 JS 로 그려져서 로그인 세션 없이는 목록을 읽을 수 없습니다.',
+  },
 ];
 
 const OUT_DIR = '.sessions';

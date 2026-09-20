@@ -54,8 +54,20 @@ export async function isSessionAlive(page: Page, loggedInSelector: string): Prom
 }
 
 export class SessionExpiredError extends Error {
-  constructor(public readonly target: string) {
-    super(`${target} 세션이 만료되었습니다. 대시보드에서 재로그인이 필요합니다.`);
+  /**
+   * @param target  어느 사이트인지. 짧게 — 이 값이 문장에 그대로 끼워진다.
+   * @param hint    이번 건에서 무엇을 하면 되는지. 사이트마다 복구 방법이 달라서
+   *                (재로그인 / 세션 다시 뜨기 / 콘솔 방식으로 우회) 호출부가 알려준다.
+   *                생략하면 기존 문구 그대로다.
+   */
+  constructor(
+    public readonly target: string,
+    public readonly hint?: string,
+  ) {
+    super(
+      `${target} 세션이 만료되었습니다. ` +
+        (hint ?? '대시보드에서 재로그인이 필요합니다.'),
+    );
     this.name = 'SessionExpiredError';
   }
 }

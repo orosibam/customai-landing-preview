@@ -159,19 +159,26 @@ node 에는 크롬 TLS 지문을 흉내 내는 검증된 수단이 없어서 그
 | 홈피드 반복 호출 | ❌ 980건 뽑아 **적중 0건**. 무작위라 조준 불가 |
 | 유료 API | 지출 0원 원칙에 걸림 |
 
-그래서 흐름은 이렇게 갈린다. **사람 손은 ①에만 들어간다.**
+그렇다고 **사람이 매번 긁을 이유는 없다.** 로그인을 한 번만 해두면 나머지는 자동이다.
 
 ```
-① 로그인된 크롬에서 키워드 검색 → 콘솔에 harvest/*.js 붙여넣기 → JSON 다운로드
-②  npm run links import <파일>        → harvested_links 에 적재
+① npm run capture xhs        ← 사람이 하는 건 이것뿐. 창이 열리면 평소처럼 로그인
+② npm run links harvest ...  → 저장된 세션으로 검색·스크롤·수집·저장까지 자동
 ③ 이후 전부 자동 — 비로그인 curl_cffi 로 각 링크를 열어 파싱·다운로드
 ```
 
 ```bash
-npm run links snippet xhs     # 콘솔에 붙여넣을 코드를 출력
-npm run links snippet ali
+npm run capture xhs                    # 로그인 1회 (ali 도 동일)
+npm run links harvest xhs 洗车液        # 세션으로 알아서 긁어온다
+npm run links status                   # 키워드별 잔량 — 떨어지기 전에 본다
+```
+
+샤오홍슈가 자동화 브라우저를 감지해 로그인 벽을 다시 띄우는 경우가 있다. 그때를 위한
+폴백으로 브라우저 콘솔에 붙여넣는 방식을 남겨뒀다 — 자동 경로가 막혔을 때만 쓴다.
+
+```bash
+npm run links snippet xhs                    # 콘솔에 붙여넣을 코드
 npm run links import ~/Downloads/xhs-links-*.json
-npm run links status          # 키워드별 잔량 — 떨어지기 전에 본다
 ```
 
 수확물이 떨어지면 파이프라인은 `LinkStoreEmptyError` 로 멈춘다. 이건 고장이 아니라

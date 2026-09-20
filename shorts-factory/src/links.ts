@@ -2,18 +2,24 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db, must } from './lib/supabase.js';
+import { harvest } from './lib/scrapers/harvester.js';
+import type { LinkPlatform } from './lib/scrapers/linkstore.js';
 
 /**
  * 수확한 링크 보관소 CLI.
  *
- *   npm run links snippet xhs      브라우저 콘솔에 붙여넣을 코드를 출력
- *   npm run links snippet ali
- *   npm run links import <파일>     내려받은 JSON 을 DB에 넣는다
- *   npm run links status           플랫폼·키워드별 잔량
+ *   npm run links harvest xhs 洗车液   ← 기본. 저장된 세션으로 알아서 긁어온다
+ *   npm run links status              플랫폼·키워드별 잔량
+ *
+ *   npm run links snippet xhs         (폴백) 브라우저 콘솔에 붙여넣을 코드
+ *   npm run links import <파일>        (폴백) 그렇게 내려받은 JSON 을 DB에 넣는다
  *
  * 왜 이 단계가 있는가: 샤오홍슈·1688 둘 다 비로그인으로는 키워드 검색이 안 된다.
- * 로그인된 브라우저에서 검색 결과 href 를 통째로 긁는 것만이 검증된 경로이고,
- * 그건 사람 손이 필요하다. 그 1회성 수확만 사람이 하고 나머지는 전부 자동이다.
+ * 로그인된 브라우저에서 검색 결과 href 를 통째로 긁는 것만이 검증된 경로다.
+ *
+ * 그렇다고 사람이 매번 긁을 이유는 없다. `npm run capture xhs` 로 **한 번만** 로그인해
+ * 세션을 저장해두면 harvest 가 그 세션으로 알아서 검색·스크롤·수집한다.
+ * snippet/import 는 샤오홍슈가 자동화를 감지해 막을 때를 위한 폴백으로만 남겨둔다.
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -118,7 +124,7 @@ async function status(): Promise<void> {
   }
 
   if (tally.size === 0) {
-    console.log('\n수확된 링크가 없습니다. npm run links snippet xhs 로 시작하세요.\n');
+    console.log('\n수확된 링크가 없습니다. npm run capture xhs 로 로그인 후 npm run links harvest xhs <검색어> 로 시작하세요.\n');
     return;
   }
 
@@ -130,10 +136,42 @@ async function status(): Promise<void> {
   console.log('\n  ! 는 곧 떨어집니다. ✗ 는 그 키워드로 더 못 만듭니다 — 다시 수확하세요.\n');
 }
 
+/** 별칭을 실제 플랫폼 이름으로. CLI 에서 매번 xiaohongshu 를 치게 하지 않는다. */
+function toPlatform(alias: string): LinkPlatform {
+  if (alias === 'xhs' || alias === 'xiaohongshu') return 'xiaohongshu';
+  if (alias === 'ali' || alias === 'ali1688' || alias === '1688') return 'ali1688';
+  throw new Error(`알 수 없는 대상: ${alias}. 가능한 값: xhs, ali`);
+}
+
+async function runHarvest(alias: string, keyword: string): Promise<void> {
+  const platform = toPlatform(alias);
+  console.log(`\n${platform} / "${keyword}" 수확 중... (브라우저를 띄웁니다)\n`);
+
+  const r = await harvest(platform, keyword);
+  console.log(
+    `✅ ${r.found}건 긁어서 ${r.inserted}건 신규 저장 ` +
+      `(${r.found - r.inserted}건은 이미 있던 것)\n`,
+  );
+  if (r.inserted === 0) {
+    console.log(
+      '   새로 들어간 게 없습니다. 같은 검색 결과를 다시 긁었을 가능성이 큽니다 —\n' +
+        '   검색어를 바꾸거나 HARVEST_SCROLL_ROUNDS 를 올려보세요.\n',
+    );
+  }
+}
+
 async function main(): Promise<void> {
   const [cmd, arg] = process.argv.slice(2);
 
   switch (cmd) {
+    case 'harvest': {
+      const keyword = process.argv.slice(4).join(' ');
+      if (!arg || !keyword) {
+        throw new Error('사용법: npm run links harvest <xhs|ali> <검색어>');
+      }
+      await runHarvest(arg, keyword);
+      break;
+    }
     case 'snippet':
       await printSnippet(arg ?? 'xhs');
       break;
@@ -147,9 +185,12 @@ async function main(): Promise<void> {
     default:
       console.error(
         '사용법:\n' +
-          '  npm run links snippet <xhs|ali>   브라우저 콘솔용 코드 출력\n' +
-          '  npm run links import <파일>        내려받은 JSON 을 DB에 저장\n' +
-          '  npm run links status              플랫폼·키워드별 잔량',
+          '  npm run links harvest <xhs|ali> <검색어>   저장된 세션으로 알아서 긁어온다\n' +
+          '  npm run links status                      플랫폼·키워드별 잔량\n' +
+          '\n' +
+          '  폴백 (샤오홍슈가 자동화를 막을 때만):\n' +
+          '  npm run links snippet <xhs|ali>           브라우저 콘솔용 코드 출력\n' +
+          '  npm run links import <파일>                내려받은 JSON 을 DB에 저장',
       );
       process.exit(1);
   }
