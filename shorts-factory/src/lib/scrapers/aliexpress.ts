@@ -1,19 +1,21 @@
 import { writeFile } from 'node:fs/promises';
 import { withContext, pause } from '../browser.js';
-import { FOOTAGE_POOL_SIZE, MIN_SOURCE_COUNT } from '../../config.js';
+import { FOOTAGE_POOL_SIZE } from '../../config.js';
 
 /**
  * 알리익스프레스 상품 영상 수집 — 소재 공급처.
  *
- * ## 왜 1688 이 아니라 여기인가
+ * ## 왜 1688 이 아니라 여기가 1차인가
  *
- * 러너 실측(2026-09-20)이 1688·샤오홍슈 경로를 닫았다:
+ * 러너 실측(2026-09-20)이 브라우저로 연 1688·샤오홍슈 경로를 닫았다:
  *   · 샤오홍슈 검색   256KB → 登录后查看搜索结果          링크 0
  *   · 1688 PC 검색   236KB → 亲，请拖动下方滑块完成验证   링크 0  (슬라이더 캡차)
  *   · 1688 모바일     220KB → 密码登录 / 扫码登录         링크 0
  *
- * 데이터센터 IP 에서는 자동으로 못 뚫는다. 사람이 자기 브라우저로 매일 긁어주는 건
- * 매일 도는 공장에 못 쓴다.
+ * 데이터센터 IP 에서 **브라우저로 열면** 이렇다. 나중에 생 HTTP + 크롬 TLS 지문으로
+ * 받으면 1688 모바일 검색은 상품 id 를 내준다는 게 확인됐고(cn-footage.ts), 그래서
+ * 1688 은 2차 공급처로 살아 있다. 다만 여기가 먼저인 건 같은 날 같은 러너에서
+ * 알리가 검색·상세·영상까지 끝까지 간 유일한 곳이었기 때문이다.
  *
  * 같은 날 같은 러너에서 알리는 달랐다:
  *   · 검색      로그인·캡차 없이 열림, 상품 링크 6개
@@ -39,6 +41,14 @@ export interface AliClip {
   productUrl: string;
   productId: string;
   title: string;
+}
+
+export interface AliCollectResult {
+  clips: AliClip[];
+  /** 서로 다른 판매자 수. 같은 페이지의 두 영상은 같은 촬영본이라 1로 센다. */
+  sellersWithVideo: number;
+  /** 왜 이만큼인지. 부족해도 여기서 던지지 않고 호출부가 공급처를 갈아타며 읽는다. */
+  note: string;
 }
 
 export interface AliQuery {
@@ -86,10 +96,10 @@ export class AliBlockedError extends Error {
  *
  * 예전엔 페이지당 첫 번째 하나만 받고 나머지를 버렸다. 절반을 버리고 있었던 셈이다.
  */
-export async function collectClips(query: AliQuery): Promise<AliClip[]> {
+export async function collectClips(query: AliQuery): Promise<AliCollectResult> {
   const limit = query.limit ?? FOOTAGE_POOL_SIZE;
 
-  return withContext({ locale: 'en-US', timezone: 'America/Los_Angeles' }, async (ctx) => {
+  return withContext<AliCollectResult>({ locale: 'en-US', timezone: 'America/Los_Angeles' }, async (ctx) => {
     const page = await ctx.newPage();
 
     const searchUrl = `https://www.aliexpress.com/w/wholesale-${encodeURIComponent(
@@ -200,25 +210,23 @@ export async function collectClips(query: AliQuery): Promise<AliClip[]> {
       }
     }
 
-    // 판매자 수로 센다. 같은 페이지에서 뽑은 두 개는 같은 촬영본이라 화면이 비슷하고,
-    // 그걸 서로 다른 소스로 세면 "다양한 소재를 확보했다" 는 판정이 거짓이 된다.
-    if (sellersWithVideo < MIN_SOURCE_COUNT) {
-      throw new Error(
-        `소재 부족: "${query.keyword}" 로 상품 ${items.length}건 중 ` +
-          `${Math.min(items.length, limit * 3)}건을 훑어 ` +
-          `판매자 ${sellersWithVideo}곳에서 영상 ${clips.length}개를 찾았습니다 ` +
-          `(서로 다른 판매자 최소 ${MIN_SOURCE_COUNT}곳 필요).\n` +
-          `   같은 판매자 영상만 모으면 각도와 동작이 겹쳐 짜깁기할 게 없습니다.\n` +
-          `   검색어를 넓히거나(브랜드명 빼기, 범주어 쓰기) 다른 제품으로 교체하세요.` +
-          (noVideo.length > 0 ? `\n   영상 없던 상품 ${noVideo.length}건.` : ''),
-      );
-    }
+    // 모자라도 여기서 던지지 않는다.
+    //
+    // 예전에는 MIN_SOURCE_COUNT 에 못 미치면 여기서 예외를 냈다. 공급처가 알리
+    // 하나였을 때는 그게 맞았지만 — 지금은 1688·타오바오가 뒤에 있다. 여기서
+    // 던지면 3개를 이미 받아놓고도 그걸 버리고 다음 공급처가 0에서 다시 시작한다.
+    // 부족 판정은 **풀 전체를 본 뒤** 소재 담당이 한다.
+    //
+    // 판매자 수를 따로 세어 넘긴다. 같은 페이지에서 뽑은 두 영상은 같은 촬영본이라
+    // 화면이 비슷하고, 그걸 서로 다른 소스로 세면 "다양한 소재를 확보했다" 가 거짓이 된다.
+    const note =
+      `알리 "${query.keyword}": 상품 ${items.length}건 중 ` +
+      `${Math.min(items.length, limit * 3)}건을 훑어 판매자 ${sellersWithVideo}곳에서 ` +
+      `영상 ${clips.length}개` +
+      (noVideo.length > 0 ? ` (영상 없던 상품 ${noVideo.length}건)` : '');
+    console.log(note);
 
-    console.log(
-      `알리 "${query.keyword}": 판매자 ${sellersWithVideo}곳에서 영상 ${clips.length}개 확보 ` +
-        `(편집자가 여기서 컷마다 골라 씁니다)`,
-    );
-    return clips;
+    return { clips, sellersWithVideo, note };
   });
 }
 

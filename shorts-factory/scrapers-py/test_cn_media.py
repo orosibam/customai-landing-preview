@@ -12,7 +12,9 @@ Vue ref 껍데기) 그 둘을 고정해두지 않으면 조용히 빈 결과가 
 from __future__ import annotations
 
 import json
+import re
 import sys
+from pathlib import Path
 
 import cn_media as m
 
@@ -175,6 +177,26 @@ check("짧은 숫자는 상품 id 가 아니다", m._extract_offer_ids('<div dat
 print("타오바오 상품 id 추출")
 _TB = '<a href="//item.taobao.com/item.htm?spm=a1z10&id=712345678906">상품</a>'
 check("상세 링크에서 id (앞에 다른 파라미터가 있어도)", m._TAOBAO_ID_RE.search(_TB).group(1), "712345678906")
+
+# ---------------------------------------------------------------------------
+# 서브커맨드 배선 — 등록만 하고 실행을 안 붙인 걸 잡는다
+# ---------------------------------------------------------------------------
+#
+# sources-probe / taobao-search / taobao-item 을 파서에는 등록해놓고 main() 의
+# if-elif 사슬에 안 붙였다. 마지막 else 가 selfcheck 폴백이라, 워크플로우가
+# sources-probe 를 시키면 **selfcheck 결과가 찍혔다.** 종료코드는 0이고 JSON 도
+# 나오니 계측을 돌렸다고 믿게 된다 — 조용한 실패 중에 제일 나쁜 종류다.
+#
+# 소스를 읽어서 "등록된 이름이 전부 분기에 있는가" 만 본다. 네트워크는 안 탄다.
+
+print("서브커맨드 배선")
+
+_SRC = (Path(m.__file__).read_text())
+_registered = set(re.findall(r'sub\.add_parser\("([a-z-]+)"\)', _SRC))
+_dispatched = set(re.findall(r'args\.cmd == "([a-z-]+)"', _SRC))
+
+check("등록한 서브커맨드가 하나도 안 빠지고 분기에 있다", sorted(_registered - _dispatched), [])
+check("분기만 있고 등록이 없는 이름은 없다", sorted(_dispatched - _registered), [])
 
 if failures:
     print(f"{len(failures)}건 실패")

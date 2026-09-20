@@ -152,3 +152,35 @@ export function selfcheck(): Promise<{
 }> {
   return run(['selfcheck'], 60_000);
 }
+
+/**
+ * 1688 검색 → 상품 id 목록.
+ *
+ * 오래 "1688 검색은 HTTP 로 못 뚫는다" 고 적어뒀는데 그건 추출이 못 읽은 것이었다
+ * (모바일 검색은 detail 링크 대신 `data-offer-id` 속성으로 싣는다). 파이썬 쪽
+ * `_extract_offer_ids` 가 세 모양을 전부 보게 고쳤고, 여기는 그 결과를 받는다.
+ *
+ * 0건이면 파이썬이 진입로별 바이트·id 개수를 적어 던진다. 그 메시지가 그대로 올라온다.
+ */
+export function aliSearch(keywordZh: string, limit: number): Promise<string[]> {
+  return run<string[]>(['ali-search', '--keyword', keywordZh, '--limit', String(limit)]);
+}
+
+/** 타오바오 검색 → 상품 id 목록. */
+export function taobaoSearch(keywordZh: string, limit: number): Promise<string[]> {
+  return run<string[]>(['taobao-search', '--keyword', keywordZh, '--limit', String(limit)]);
+}
+
+export interface TaobaoItem {
+  itemId: string;
+  productUrl: string;
+  bytes: number;
+  /** 상세가 로그인 벽으로 떴다. 영상이 0개인 이유가 "없어서" 가 아니라 "못 봐서" 다. */
+  loginWall: boolean;
+  videoUrls: string[];
+}
+
+/** 타오바오 상품 상세 → 영상 주소. */
+export function taobaoItem(itemId: string): Promise<TaobaoItem> {
+  return run<TaobaoItem>(['taobao-item', '--id', itemId]);
+}

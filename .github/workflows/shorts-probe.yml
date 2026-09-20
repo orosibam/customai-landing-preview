@@ -53,9 +53,17 @@ jobs:
           pip install -r scrapers-py/requirements.txt
 
       # 네트워크 없이도 도는 파싱 테스트. 여기가 깨지면 아래는 볼 필요가 없다.
+      # 서브커맨드 배선 검사도 여기에 들어 있다 — sources-probe 를 파서에만 등록하고
+      # 실행을 안 붙여서, 계측을 시키면 selfcheck 결과가 찍히던 걸 잡는다.
       - name: SSR 파싱 테스트
         working-directory: shorts-factory
         run: python3 scrapers-py/test_cn_media.py
+
+      # 검색어 넓히기. 5차 제작이 "mini portable massage gun" 으로 상품 7건만 받고
+      # 멈췄고, 그 경우를 테스트로 고정해뒀다. 네트워크를 안 탄다.
+      - name: 검색어 넓히기 테스트
+        working-directory: shorts-factory
+        run: npx tsx src/lib/scrapers/keywords.test.ts
 
       # 샤오홍슈·1688 은 HTTP 만 쓴다. 수확 재고가 없으면 [재고없음] 으로 찍히고
       # 차단으로 세지 않는다 — 그건 코드 고장이 아니라 사람이 로그인할 차례라는 뜻이다.

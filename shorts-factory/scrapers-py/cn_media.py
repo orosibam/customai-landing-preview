@@ -888,9 +888,16 @@ def main() -> int:
             polite_sleep()
         elif args.cmd == "ali-probe":
             result = ali_probe(args.keyword)
+        elif args.cmd == "taobao-search":
+            result = taobao_search(args.keyword, args.limit)
+        elif args.cmd == "taobao-item":
+            result = taobao_item(args.id)
+            polite_sleep()
+        elif args.cmd == "sources-probe":
+            result = sources_probe(args.keyword, args.limit)
         elif args.cmd == "download":
             result = download(args.url, args.referer, args.out)
-        else:
+        elif args.cmd == "selfcheck":
             # 값은 하나도 찍지 않는다. 설치와 연결만 확인하고 그대로 공유해도 안전해야 한다.
             session = new_session()
             res = session.get(f"{XHS_ORIGIN}/explore", timeout=30)
@@ -901,6 +908,12 @@ def main() -> int:
                 "xhsBytes": len(res.text),
                 "hasInitialState": "__INITIAL_STATE__" in res.text,
             }
+        else:
+            # 여기로 오면 파서에는 등록했는데 실행을 안 붙인 것이다. 예전엔 이 자리가
+            # selfcheck 폴백이라 sources-probe 를 시켜도 **selfcheck 결과가 나왔다** —
+            # 계측을 돌렸다고 믿으면서 엉뚱한 출력을 읽게 된다. 모르면 조용히 다른 일을
+            # 하지 말고 던진다.
+            raise Blocked(f"'{args.cmd}' 는 파서에만 있고 실행이 연결돼 있지 않습니다.")
     except Blocked as e:
         print(str(e), file=sys.stderr)
         return 1
