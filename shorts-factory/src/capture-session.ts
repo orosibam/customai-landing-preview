@@ -23,7 +23,7 @@
 
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { chromium, type Page } from 'playwright';
+import { chromium, type Page, type BrowserContext } from 'playwright';
 import { createInterface } from 'node:readline/promises';
 
 interface Target {
@@ -35,6 +35,17 @@ interface Target {
   verifyUrl: string;
   /** 로그인 상태에서만 나타나는 것 */
   loggedInSelector: string;
+  /**
+   * 셀렉터만 믿으면 안 되는 곳을 위한 2차 확인.
+   *
+   * 실측에서 이렇게 당했다: 샤오홍슈는 explore(둘러보기)는 비로그인도 열어주고
+   * 검색만 따로 막는다. 그래서 아바타 셀렉터가 잡혀 "✓ 저장했습니다" 를 찍었는데
+   * 정작 수확을 돌리면 검색이 로그인 벽이었다. 네이버도 같은 종류로 한 번 틀렸다.
+   *
+   * 그래서 "로그인했나" 가 아니라 "이 세션으로 실제 할 일이 되나" 를 묻는다.
+   * url 을 열어 blocked 문구가 보이면 아직 로그인이 덜 된 것으로 본다.
+   */
+  capability?: { url: string; blocked: RegExp; what: string };
   /** GitHub Secrets 에 넣을 이름 */
   secretName: string;
   hint: string;
@@ -56,6 +67,12 @@ const TARGETS: Target[] = [
     loginUrl: 'https://nid.naver.com/nidlogin.login',
     verifyUrl: 'https://www.naver.com',
     loggedInSelector: '.MyView-module__my_info___GNmHz, .link_login_area, [class*="MyView"]',
+    // 위 셀렉터는 로그아웃 상태에서도 잡힌다(실측). 로그인해야만 열리는 곳으로 확인한다.
+    capability: {
+      url: 'https://brandconnect.naver.com',
+      blocked: /브랜드 협업의 시작|크리에이터, 브랜드/,
+      what: '브랜드 커넥트 접근',
+    },
     secretName: 'NAVER_STORAGE_STATE',
     hint: '네이버 클립 업로드에 쓰입니다. 구독자 조건 없이 구매 링크가 붙는 채널입니다.',
   },
@@ -75,6 +92,12 @@ const TARGETS: Target[] = [
     verifyUrl: 'https://www.xiaohongshu.com/explore',
     // 로그인하면 우상단에 내 아바타/계정 메뉴가 생긴다. 비로그인이면 로그인 버튼만 있다.
     loggedInSelector: '.user .link-wrapper, .avatar, [class*="user-avatar"], .reds-avatar',
+    // explore 는 비로그인도 열린다. 우리가 실제로 쓰는 건 검색이므로 검색으로 확인한다.
+    capability: {
+      url: 'https://www.xiaohongshu.com/search_result?keyword=%E6%B4%97%E8%BD%A6%E6%B6%B2',
+      blocked: /登录后查看|扫码登录|手机号登录/,
+      what: '키워드 검색',
+    },
     secretName: 'XIAOHONGSHU_STORAGE_STATE',
     hint:
       '소재 링크 수확에 쓰입니다. 비로그인으로는 키워드 검색이 아예 안 돼서 ' +
@@ -110,9 +133,39 @@ const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
  * 사람이 기억해야 할 단계를 없앤다. 로그인 흔적이 보이면 바로 저장한다.
  * Enter 는 남겨두되 "지금 바로 확인해라" 는 뜻으로만 쓴다.
  */
-async function waitForLogin(page: Page, target: Target): Promise<boolean> {
+async function waitForLogin(
+  page: Page,
+  target: Target,
+  context: BrowserContext,
+): Promise<boolean> {
   const startedAt = Date.now();
   let lastNotice = 0;
+  let capabilityNoticed = false;
+
+  // 사람이 쓰는 탭을 건드리지 않으려고 확인은 별도 탭에서 한다.
+  const probeRef: { page: Page | null } = { page: null };
+  const closeProbe = async (): Promise<void> => {
+    if (probeRef.page) {
+      await probeRef.page.close().catch(() => {});
+      probeRef.page = null;
+    }
+  };
+
+  /** 이 세션으로 실제 할 일이 되는지 본다. capability 가 없으면 확인할 게 없으므로 통과. */
+  const capabilityOk = async (): Promise<boolean> => {
+    const cap = target.capability;
+    if (!cap) return true;
+    try {
+      probeRef.page ??= await context.newPage();
+      const probe = probeRef.page;
+      await probe.goto(cap.url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      await probe.waitForTimeout(2_500);
+      const text = await probe.evaluate(() => document.body.innerText || '');
+      return !cap.blocked.test(text);
+    } catch {
+      return false;   // 확인을 못 했으면 통과시키지 않는다. 조용한 실패보다 낫다.
+    }
+  };
 
   // Enter 를 누르면 기다리지 않고 즉시 한 번 더 본다. 안 눌러도 상관없다.
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -126,7 +179,21 @@ async function waitForLogin(page: Page, target: Target): Promise<boolean> {
         .first()
         .isVisible()
         .catch(() => false);
-      if (found) return true;
+      if (found) {
+        // 셀렉터만 믿으면 "저장했습니다" 를 찍고도 정작 쓸 때 로그인 벽을 만난다.
+        if (await capabilityOk()) {
+          await closeProbe();
+          return true;
+        }
+        if (!capabilityNoticed) {
+          capabilityNoticed = true;
+          console.log(
+            `\n  로그인 표시는 보이는데 ${target.capability?.what} 가 아직 안 열립니다.`,
+          );
+          console.log('  QR 을 스캔하셨다면 휴대폰에서 "확인/로그인" 까지 눌러주세요.');
+          console.log('  계속 기다립니다.\n');
+        }
+      }
 
       // 창을 닫아버린 경우. 계속 기다려봐야 소용없다.
       if (page.isClosed()) {
@@ -150,6 +217,7 @@ async function waitForLogin(page: Page, target: Target): Promise<boolean> {
     }
   } finally {
     rl.close();
+    await closeProbe();
   }
 
   console.log('\n  10분 동안 로그인이 감지되지 않았습니다.');
@@ -186,12 +254,17 @@ async function capture(target: Target): Promise<boolean> {
   console.log('\n  로그인이 감지되면 자동으로 저장하고 창을 닫습니다.');
   console.log('  터미널로 돌아오실 필요 없습니다. 그냥 로그인만 끝내세요.\n');
 
-  const ok = await waitForLogin(page, target);
+  const ok = await waitForLogin(page, target, context);
   console.log('');
 
   if (!ok) {
     console.log(`\n  ✗ 로그인이 확인되지 않았습니다.`);
-    console.log(`     ${target.verifyUrl} 에서 로그인 상태가 보이지 않습니다.`);
+    if (target.capability) {
+      console.log(`     ${target.capability.what} 가 열리는지까지 확인하는데, 열리지 않았습니다.`);
+      console.log(`     확인 주소: ${target.capability.url}`);
+    } else {
+      console.log(`     ${target.verifyUrl} 에서 로그인 상태가 보이지 않습니다.`);
+    }
     console.log(`     다시 시도하거나, 이미 로그인돼 있는데 확인만 실패한 것이라면`);
     console.log(`     capture-session.ts 의 loggedInSelector 를 조정하세요.`);
     await context.close();
