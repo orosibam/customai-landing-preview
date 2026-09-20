@@ -406,6 +406,17 @@ def xhs_note(url: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _OFFER_RE = re.compile(r"detail\.1688\.com/offer/(\d{6,})\.html")
+# 상품 id 는 링크 말고 **속성**으로도 박혀 있다.
+#
+# 이걸 놓쳐서 "1688 검색은 못 뚫는다" 로 결론냈었다. ali-probe 가 m.1688 에서
+# offerIdAttr 20개를 세어 보여줬는데도, 추출은 detail 링크만 찾는 _OFFER_RE 로 해서
+# offerIds 0 이 나왔다. 계측이 답을 줬는데 읽는 쪽이 못 받은 것이다.
+_OFFER_ATTR_RE = re.compile(r'data-offer-id=[\"\'](\d{6,})[\"\']')
+_OFFER_JSON_RE = re.compile(r'"offer(?:_)?[Ii]d"\s*:\s*"?(\d{6,})"?')
+
+# 타오바오 상품 id. 상세 주소가 item.taobao.com/item.htm?id=... 형태다.
+_TAOBAO_ID_RE = re.compile(r"item\.taobao\.com/item\.htm\?(?:[^\"'\s]*&)?id=(\d{6,})")
+_TAOBAO_ATTR_RE = re.compile(r'data-(?:item|nid)-?id=[\"\'](\d{6,})[\"\']')
 # 상품 영상은 타오바오 비디오 CDN 에서 내려온다. JSON 안에 이스케이프된 채로 박혀 있어
 # 경로 구분자가 `/` 가 아니라 `\/` 다. 역슬래시를 제외하면 호스트 뒤로 한 글자도 못 가므로
 # 경계는 따옴표와 공백으로만 잡는다 (JSON 문자열 값이라 따옴표에서 끝난다).
@@ -442,6 +453,73 @@ def _ali_variants(keyword: str) -> list[tuple[str, str, bool]]:
         ),
         ("m.1688", f"https://m.1688.com/offer_search/-6D7033.html?keywords={utf}", True),
     ]
+
+
+def sources_probe(keyword: str, limit: int) -> dict[str, Any]:
+    """
+    소재 공급처 세 곳을 **검색부터 상세 영상까지** 끝까지 재본다.
+
+    ## 왜 끝까지 가야 하는가
+
+    "검색이 열린다" 와 "소재를 구할 수 있다" 는 다르다. 알리가 그 차이로 두 번
+    막혔다 — 검색은 열렸는데 상품 7건 전부 영상이 0개였다. 검색 결과 수만 보고
+    "뚫렸다" 고 하면 파이프라인을 얹은 뒤에 그걸 알게 된다.
+
+    그래서 공급처마다 검색 → 상세 → 영상 개수까지 세고, 마지막에 **영상을 실제로
+    몇 개 확보했는지**로 판정한다.
+
+    ## 세 곳을 같이 재는 이유
+
+    지금 소재 공급처가 알리 하나뿐이다. 다른 단계는 전부 폴백이 있는데(인스타 안
+    되면 틱톡, 쿠팡 안 되면 다나와) 소재만 없어서, 거기가 막히면 파이프라인이 선다.
+    셋 중 둘만 살아 있어도 구조가 훨씬 튼튼해진다.
+    """
+    out: dict[str, Any] = {"keyword": keyword, "sources": []}
+
+    # ── 1688 ────────────────────────────────────────────────
+    row: dict[str, Any] = {"name": "1688", "ids": 0, "opened": 0, "withVideo": 0, "videos": 0}
+    try:
+        ids = ali_search(keyword, limit * 3)
+        row["ids"] = len(ids)
+        for oid in ids[:limit]:
+            polite_sleep()
+            try:
+                offer = ali_offer(ALI_DETAIL.format(id=oid))
+                row["opened"] += 1
+                n = len(offer["videoUrls"])
+                if n:
+                    row["withVideo"] += 1
+                    row["videos"] += n
+            except Exception as e:  # noqa: BLE001
+                row.setdefault("detailErrors", []).append(f"{oid}: {type(e).__name__}")
+    except Exception as e:  # noqa: BLE001
+        row["error"] = f"{type(e).__name__}: {str(e)[:300]}"
+    out["sources"].append(row)
+
+    # ── 타오바오 ─────────────────────────────────────────────
+    row = {"name": "taobao", "ids": 0, "opened": 0, "withVideo": 0, "videos": 0}
+    try:
+        ids = taobao_search(keyword, limit * 3)
+        row["ids"] = len(ids)
+        for iid in ids[:limit]:
+            polite_sleep()
+            try:
+                item = taobao_item(iid)
+                row["opened"] += 1
+                if item["loginWall"]:
+                    row.setdefault("loginWalls", 0)
+                    row["loginWalls"] += 1
+                n = len(item["videoUrls"])
+                if n:
+                    row["withVideo"] += 1
+                    row["videos"] += n
+            except Exception as e:  # noqa: BLE001
+                row.setdefault("detailErrors", []).append(f"{iid}: {type(e).__name__}")
+    except Exception as e:  # noqa: BLE001
+        row["error"] = f"{type(e).__name__}: {str(e)[:300]}"
+    out["sources"].append(row)
+
+    return out
 
 
 def ali_probe(keyword: str) -> dict[str, Any]:
@@ -547,35 +625,139 @@ def _ali_search_probe(keyword: str) -> list[dict[str, Any]]:
     return results
 
 
+def _extract_offer_ids(html: str) -> list[str]:
+    """
+    HTML 에서 1688 상품 id 를 뽑는다. 세 가지 모양을 전부 본다.
+
+    한 가지만 보다가 틀렸다. detail 링크(_OFFER_RE)만 찾았는데 m.1688 은 링크 대신
+    `data-offer-id` 속성으로 싣는다. 계측(ali-probe)이 그 속성을 20개 세어 보여줬는데도
+    추출이 0 이어서 "검색을 못 뚫는다" 로 결론냈다. 모양이 여러 개면 여러 개를 본다.
+    """
+    ids: list[str] = []
+    for regex in (_OFFER_RE, _OFFER_ATTR_RE, _OFFER_JSON_RE):
+        for match in regex.finditer(html):
+            oid = match.group(1)
+            if oid not in ids:
+                ids.append(oid)
+    return ids
+
+
 def ali_search(keyword: str, limit: int) -> list[str]:
     """
     1688 검색 결과에서 상품 id 를 뽑는다.
 
-    주의: 검색은 샤오홍슈만큼은 아니어도 1688 에서도 가장 잘 막히는 지점이다.
-    여기서 0건이 나오면 차단을 의심해야 하며, 조용히 빈 목록을 돌려주지 않고 던진다.
+    진입로를 하나만 쓰지 않는다. PC 검색(s.1688)은 브라우저로 열면 슬라이더 캡차가
+    뜨지만, **모바일 검색을 생 HTTP 로 받으면 상품 id 가 속성으로 실려 온다**(실측:
+    67KB, data-offer-id 20개). 같은 사이트라도 진입로와 클라이언트에 따라 결과가
+    다르므로 순서대로 시도한다.
+
+    0건이면 조용히 빈 목록을 돌려주지 않고 던진다 — 소재가 없는 것과 못 읽은 것은
+    대응이 다르고, 섞으면 엉뚱한 데를 고치게 된다.
     """
+    gbk = quote(keyword, encoding="gbk")
+    utf = quote(keyword)
+
+    # (이름, URL, 홈 워밍업 여부). 실측에서 모바일이 제일 잘 나와서 앞에 둔다.
+    routes = [
+        ("m.1688", f"https://m.1688.com/offer_search/-6D7033.html?keywords={utf}", True),
+        ("s.1688-gbk", ALI_SEARCH.format(kw=gbk), True),
+        ("s.1688-utf8", ALI_SEARCH.format(kw=utf), False),
+    ]
+
+    tried: list[str] = []
+    for name, url, warm in routes:
+        session = new_session()
+        try:
+            if warm:
+                session.get("https://www.1688.com/", timeout=30)
+                polite_sleep()
+            html = get_html(session, url, referer="https://www.1688.com/")
+        except Exception as e:  # noqa: BLE001
+            tried.append(f"{name}: {type(e).__name__}")
+            continue
+
+        ids = _extract_offer_ids(html)
+        tried.append(f"{name}: {len(html)}바이트, id {len(ids)}개")
+        if ids:
+            print(f"1688 검색: {name} 에서 상품 id {len(ids)}개", file=sys.stderr)
+            return ids[:limit]
+        polite_sleep()
+
+    raise Blocked(
+        f'1688 검색 "{keyword}" 에서 상품 id 를 한 건도 못 찾았습니다.\n'
+        f"   진입로별: {' / '.join(tried)}\n"
+        "   상세 페이지는 로그인 없이 열리므로(실측), id 만 구하면 영상은 받을 수 있습니다."
+    )
+
+
+def taobao_search(keyword: str, limit: int) -> list[str]:
+    """
+    타오바오 검색에서 상품 id 를 뽑는다.
+
+    앞선 기록은 "타오바오에서는 영상을 한 건도 받지 못했다" 였는데, 그게 검색이
+    막혀서인지 상세에 영상이 없어서인지 구분돼 있지 않았다. 둘은 대응이 다르다.
+    여기서는 검색만 맡고, 판정은 호출부가 상세까지 열어보고 한다.
+    """
+    utf = quote(keyword)
+    routes = [
+        ("s.taobao", f"https://s.taobao.com/search?q={utf}", True),
+        ("m.taobao", f"https://h5.m.taobao.com/search.html?q={utf}", True),
+    ]
+
+    tried: list[str] = []
+    for name, url, warm in routes:
+        session = new_session()
+        try:
+            if warm:
+                session.get("https://www.taobao.com/", timeout=30)
+                polite_sleep()
+            html = get_html(session, url, referer="https://www.taobao.com/")
+        except Exception as e:  # noqa: BLE001
+            tried.append(f"{name}: {type(e).__name__}")
+            continue
+
+        ids: list[str] = []
+        for regex in (_TAOBAO_ID_RE, _TAOBAO_ATTR_RE):
+            for match in regex.finditer(html):
+                if match.group(1) not in ids:
+                    ids.append(match.group(1))
+
+        wall = any(m in html for m in ("登录", "滑动验证", "captcha", "punish"))
+        tried.append(f"{name}: {len(html)}바이트, id {len(ids)}개{', 벽 표식 있음' if wall else ''}")
+        if ids:
+            print(f"타오바오 검색: {name} 에서 상품 id {len(ids)}개", file=sys.stderr)
+            return ids[:limit]
+        polite_sleep()
+
+    raise Blocked(
+        f'타오바오 검색 "{keyword}" 에서 상품 id 를 한 건도 못 찾았습니다.\n'
+        f"   진입로별: {' / '.join(tried)}"
+    )
+
+
+def taobao_item(item_id: str) -> dict[str, Any]:
+    """타오바오 상품 상세에서 영상 주소를 뽑는다. 추출 규칙은 1688 과 같다."""
     session = new_session()
-    # 1688 검색은 키워드를 GBK 로 인코딩해 받는다. UTF-8 로 보내면 결과가 비어 나온다.
-    html = get_html(session, ALI_SEARCH.format(kw=quote(keyword, encoding="gbk")))
+    url = f"https://item.taobao.com/item.htm?id={item_id}"
+    html = get_html(session, url, referer="https://s.taobao.com/")
 
-    ids: list[str] = []
-    for match in _OFFER_RE.finditer(html):
-        if match.group(1) not in ids:
-            ids.append(match.group(1))
-        if len(ids) >= limit:
-            break
+    videos: list[str] = []
+    for match in _VIDEO_KEY_RE.finditer(html):
+        candidate = _unescape_url(match.group(1))
+        if candidate.startswith("http") and candidate not in videos:
+            videos.append(candidate)
+    for match in _VIDEO_RE.finditer(html):
+        candidate = _unescape_url(match.group(0))
+        if candidate not in videos:
+            videos.append(candidate)
 
-    if not ids:
-        raise Blocked(
-            f'1688 검색 "{keyword}" 에서 상품 id 를 한 건도 못 찾았습니다 '
-            f"({len(html)}바이트 수신).\n"
-            "   실측(2026-09-20): 검색 페이지 25KB 안에 detail.1688.com/offer 링크도, "
-            "offerId/data-offer-id 키도 0건입니다. 캡차도 로그인 벽도 아닙니다 — "
-            "상품 데이터가 애초에 HTML 에 없고 JS 가 나중에 받아옵니다.\n"
-            "   즉 HTTP 만으로는 1688 '검색' 을 뚫을 수 없습니다. 상품 id 를 다른 데서 "
-            "구해 ali-offer 로 상세만 여는 경로가 필요합니다 (상세 페이지는 열립니다)."
-        )
-    return ids
+    return {
+        "itemId": item_id,
+        "productUrl": url,
+        "bytes": len(html),
+        "loginWall": any(m in html for m in ("登录", "滑动验证", "captcha")),
+        "videoUrls": videos,
+    }
 
 
 def ali_offer(url: str) -> dict[str, Any]:
@@ -669,6 +851,17 @@ def main() -> int:
 
     p = sub.add_parser("ali-offer")
     p.add_argument("--url", required=True)
+
+    p = sub.add_parser("sources-probe")
+    p.add_argument("--keyword", required=True, help="중국어 검색어")
+    p.add_argument("--limit", type=int, default=4, help="공급처마다 상세를 몇 건 열어볼지")
+
+    p = sub.add_parser("taobao-search")
+    p.add_argument("--keyword", required=True)
+    p.add_argument("--limit", type=int, default=12)
+
+    p = sub.add_parser("taobao-item")
+    p.add_argument("--id", required=True)
 
     p = sub.add_parser("ali-probe")
     p.add_argument("--keyword", required=True)

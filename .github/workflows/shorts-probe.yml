@@ -165,6 +165,20 @@ jobs:
         working-directory: shorts-factory
         run: npx tsx src/probe-ali-yield.ts
 
+      # 소재 공급처가 알리 하나뿐이라 거기가 막히면 파이프라인이 선다. 다른 단계는
+      # 전부 폴백이 있는데(인스타↔틱톡, 쿠팡→다나와) 소재만 없었다.
+      #
+      # 그리고 1688 을 너무 빨리 포기했다. ali-probe 가 m.1688 에서 data-offer-id
+      # 20개를 세어 보여줬는데도 추출이 detail 링크만 찾아 0건이 나왔고, 그걸 보고
+      # "HTTP 로는 못 뚫는다" 고 결론냈다. 추출을 고쳤으니 다시 잰다.
+      #
+      # 검색 결과 수가 아니라 **실제로 영상을 몇 개 확보했는지**까지 본다 —
+      # 알리가 그 차이로 두 번 막혔다(검색은 열렸는데 상품 7건 전부 영상 0개).
+      - name: 소재 공급처 3곳 (1688 · 타오바오)
+        if: always()
+        working-directory: shorts-factory
+        run: python3 scrapers-py/cn_media.py sources-probe --keyword 洗车液 --limit 4
+
       - name: 계측 원본 업로드
         if: always()
         uses: actions/upload-artifact@v4

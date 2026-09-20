@@ -142,6 +142,40 @@ for node in m.walk(feed_state):
 check("노트만 추출", notes, [("note1", "TOKEN1", 12000)])
 
 print()
+# ---------------------------------------------------------------------------
+# 상품 id 추출 — "계측은 맞았는데 추출이 못 읽은" 버그의 회귀 테스트
+# ---------------------------------------------------------------------------
+#
+# ali-probe 가 m.1688 에서 data-offer-id 20개를 세어 보여줬는데도, 추출이
+# detail 링크만 찾는 정규식이라 0건이 나왔다. 그걸 보고 "1688 검색은 HTTP 로
+# 못 뚫는다" 고 결론냈다 — 계측이 답을 줬는데 읽는 쪽이 못 받은 것이다.
+#
+# 모양이 여러 개인 걸 코드가 기억하게 테스트로 묶어둔다.
+
+print("1688 상품 id 추출")
+
+_DETAIL = '<a href="https://detail.1688.com/offer/612345678901.html">상품</a>'
+_ATTR = '<div data-offer-id="712345678902" class="card"></div>'
+_ATTR_SQ = "<div data-offer-id='812345678903'></div>"
+_JSON_STR = '{"offerId":"912345678904","title":"x"}'
+_JSON_NUM = '{"offer_id": 1012345678905}'
+
+check("detail 링크", m._extract_offer_ids(_DETAIL), ["612345678901"])
+check("data-offer-id 속성 (이걸 못 읽어 0건이 났었다)", m._extract_offer_ids(_ATTR), ["712345678902"])
+check("속성이 홑따옴표", m._extract_offer_ids(_ATTR_SQ), ["812345678903"])
+check("JSON 문자열 값", m._extract_offer_ids(_JSON_STR), ["912345678904"])
+check("JSON 숫자 값", m._extract_offer_ids(_JSON_NUM), ["1012345678905"])
+check(
+    "세 모양이 섞여도 전부, 중복 없이",
+    m._extract_offer_ids(_DETAIL + _ATTR + _JSON_STR + _DETAIL),
+    ["612345678901", "712345678902", "912345678904"],
+)
+check("짧은 숫자는 상품 id 가 아니다", m._extract_offer_ids('<div data-offer-id="123"></div>'), [])
+
+print("타오바오 상품 id 추출")
+_TB = '<a href="//item.taobao.com/item.htm?spm=a1z10&id=712345678906">상품</a>'
+check("상세 링크에서 id (앞에 다른 파라미터가 있어도)", m._TAOBAO_ID_RE.search(_TB).group(1), "712345678906")
+
 if failures:
     print(f"{len(failures)}건 실패")
     for f in failures:
