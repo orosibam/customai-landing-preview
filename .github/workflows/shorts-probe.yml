@@ -103,3 +103,11 @@ jobs:
         if: always()
         working-directory: shorts-factory
         run: python3 scrapers-py/cn_media.py ali-probe --keyword 洗车液
+
+      # 지금 첫 영상을 막고 있는 유일한 질문: 검색을 사람 로그인 없이 뚫을 수 있는가.
+      # 앞선 측정은 전부 생 HTTP 라서 "JS 가 나중에 받아온다" 까지만 알고 끝냈다.
+      # 진짜 브라우저로 열어 JS 를 돌려보는 건 여기가 처음이다.
+      - name: 검색 로그인 필요 여부 (브라우저)
+        if: always()
+        working-directory: shorts-factory
+        run: npx tsx src/probe-search.ts 洗车液
