@@ -1,4 +1,4 @@
-name: 소싱 경로 점검
+name: 파이프라인 점검
 
 # 샤오홍슈·1688 접근이 실제로 되는지만 본다.
 #
@@ -52,18 +52,32 @@ jobs:
         working-directory: shorts-factory
         run: python3 scrapers-py/test_cn_media.py
 
-      # 세 점검을 한 번에 돌린다. 차단 항목이 있으면 0이 아닌 코드로 끝나므로
-      # 실패가 로그에 그대로 드러난다 — 조용히 통과한 척하지 않는다.
-      #
-      # 브라우저는 띄우지 않는다. 샤오홍슈·1688 둘 다 이제 HTTP 만 쓴다
-      # (그래서 playwright install 단계가 없다).
+      # 샤오홍슈·1688 은 HTTP 만 쓴다. 수확 재고가 없으면 [재고없음] 으로 찍히고
+      # 차단으로 세지 않는다 — 그건 코드 고장이 아니라 사람이 로그인할 차례라는 뜻이다.
       - name: 샤오홍슈 · 1688 접근 점검
         working-directory: shorts-factory
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: npx tsx src/probe.ts cn-bridge xiaohongshu 1688
 
       # 위가 실패했을 때 "어디가" 막혔는지 본다. 1688 검색 진입로를 하나씩 때려보고
       # 상태·크기·찾은 상품 수만 낸다 (값은 찍지 않아 로그를 그대로 공유해도 안전하다).
       # 추측으로 진입로를 고르지 않으려고 만든 계측기다.
+      # 첫 영상까지 가는 경로에서 아직 한 번도 안 돌려본 둘.
+      # 타입캐스트는 한 문장만 합성한다(크레딧 소모 최소). 틱톡은 브라우저가 필요하다.
+      - name: Playwright 브라우저 설치
+        if: always()
+        working-directory: shorts-factory
+        run: npx playwright install --with-deps chromium
+
+      - name: 렌더 · 나레이션 · 틱톡 점검
+        if: always()
+        working-directory: shorts-factory
+        env:
+          TYPECAST_API_TOKEN: ${{ secrets.TYPECAST_API_TOKEN }}
+        run: npx tsx src/probe.ts ffmpeg typecast tiktok
+
       - name: 1688 진입로 계측
         if: always()
         working-directory: shorts-factory
