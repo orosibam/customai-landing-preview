@@ -168,33 +168,57 @@ async function collectFromTag(
   return out;
 }
 
+/**
+ * 페이지에 박힌 JSON 에서 숫자를 줍는다.
+ *
+ * DOM 의 "1.2M views" 스팬만 보다가 조회수가 전부 null 로 나왔다. 그 상태로는
+ * **해시태그에서 아무거나 고르는 것**과 같아진다 — "이미 터진 것만 고른다" 는
+ * 이 시스템의 전제가 통째로 무너진다.
+ *
+ * 인스타는 같은 값을 페이지 안 JSON 에도 실어 보낸다. 그쪽이 표기 변화(단위 축약,
+ * 다국어 라벨)에 영향을 안 받아 훨씬 안정적이다. DOM 은 보조로만 쓴다.
+ */
+function numFromJson(html: string, keys: string[]): number | null {
+  for (const key of keys) {
+    const m = html.match(new RegExp(`"${key}"\\s*:\\s*(\\d+)`));
+    if (m?.[1]) {
+      const n = Number(m[1]);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  }
+  return null;
+}
+
 async function readReel(page: Page, href: string, tag: string): Promise<HotVideo> {
   const url = `https://www.instagram.com${href}`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await pause(1_500, 2_500);
 
+  const html = await page.content();
+
   const data = await page.evaluate(() => {
-    const text = (sel: string): string => document.querySelector(sel)?.textContent?.trim() ?? '';
-    // 조회수는 "1.2M views" 처럼 별도 span 에 들어간다. 라벨로 찾는다.
     const spans = Array.from(document.querySelectorAll('span')).map((s) => s.textContent ?? '');
-    const viewsText = spans.find((t) => /view/i.test(t)) ?? '';
-    const likesText = spans.find((t) => /like/i.test(t)) ?? '';
     return {
-      caption: text('h1'),
-      viewsText,
-      likesText,
+      caption: document.querySelector('h1')?.textContent?.trim() ?? '',
+      viewsText: spans.find((t) => /view|조회/i.test(t)) ?? '',
+      likesText: spans.find((t) => /like|좋아요/i.test(t)) ?? '',
       author: document.querySelector('header a[href^="/"]')?.getAttribute('href') ?? '',
-      video: document.querySelector('video')?.getAttribute('src') ?? '',
     };
   });
+
+  // JSON 이 1순위, DOM 텍스트가 2순위.
+  const views =
+    numFromJson(html, ['video_view_count', 'play_count', 'video_play_count']) ??
+    parseCount(data.viewsText);
+  const likes = numFromJson(html, ['edge_liked_by', 'like_count']) ?? parseCount(data.likesText);
 
   return {
     url,
     videoId: href.split('/reel/')[1]?.replace(/\//g, '') ?? href,
     authorHandle: data.author.replace(/\//g, '') || `#${tag}`,
     caption: data.caption.slice(0, 300),
-    views: parseCount(data.viewsText),
-    likes: parseCount(data.likesText),
+    views,
+    likes,
   };
 }
 

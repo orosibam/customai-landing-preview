@@ -119,6 +119,38 @@ export async function collectClips(query: AliQuery): Promise<AliClip[]> {
       );
     }
 
+    /**
+     * 검증 페이지가 뜨면 잠깐 쉬었다 다시 연다.
+     *
+     * 계측(상세 5건)은 통과했는데 실제 수집(최대 36건)에서 막혔다. 차이는 요청량이다 —
+     * 연달아 열면 알리바바가 `_____tmd_____` 검증으로 돌린다. 영구 차단이 아니라
+     * 속도 제한이라, 쉬었다 다시 열면 열린다. 1688 쪽(cn_media.py)에서 이미 같은
+     * 방식으로 푼 적이 있다.
+     *
+     * 계속 막히면 던진다. 조용히 0건으로 넘기면 "소재가 없다" 로 오진하게 되고,
+     * 그러면 검색어를 바꾸며 헛수고하게 된다 — 원인은 검색어가 아니라 속도다.
+     */
+    const openDetail = async (url: string, attempts = 3): Promise<string> => {
+      let lastWall = '';
+      for (let i = 0; i < attempts; i++) {
+        if (i > 0) {
+          const waitMs = 4_000 * 2 ** i + Math.random() * 2_000;
+          console.log(`알리 검증("${lastWall}") — ${Math.round(waitMs / 1000)}초 쉬고 다시 엽니다`);
+          await page.waitForTimeout(waitMs);
+        }
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+        await pause(4_000, 6_000);
+        const html = await page.content();
+        const wall = BLOCK_MARKERS.find((m) => html.includes(m));
+        if (!wall) return html;
+        lastWall = wall;
+      }
+      throw new AliBlockedError(
+        `상세가 ${attempts}번 연속 검증으로 떴습니다 ("${lastWall}"). ` +
+          `요청이 너무 잦습니다 — 잠시 뒤 다시 시도하거나 소재 풀 크기를 줄이세요.`,
+      );
+    };
+
     const clips: AliClip[] = [];
     const noVideo: string[] = [];
     // 판매자가 달라도 같은 소재 영상을 쓰는 경우가 있다. 같은 파일을 두 번 받으면
@@ -131,12 +163,7 @@ export async function collectClips(query: AliQuery): Promise<AliClip[]> {
       if (clips.length >= limit) break;
 
       try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-        await pause(4_000, 6_000);
-
-        const html = await page.content();
-        const blocked = BLOCK_MARKERS.find((m) => html.includes(m));
-        if (blocked) throw new AliBlockedError(`상세가 검증으로 떴습니다 ("${blocked}")`);
+        const html = await openDetail(url);
 
         const found = [...new Set((html.match(VIDEO_RE) ?? []).map(unescapeUrl))].filter((u) =>
           u.startsWith('http'),
@@ -162,6 +189,9 @@ export async function collectClips(query: AliQuery): Promise<AliClip[]> {
           addedHere++;
         }
         if (addedHere > 0) sellersWithVideo++;
+
+        // 다음 상품까지 간격을 둔다. 앞에서 검증에 걸린 게 속도 때문이었다.
+        await pause(2_500, 4_500);
       } catch (e) {
         if (e instanceof AliBlockedError) throw e;
         // 상품 한 건이 안 열리는 건 흔하다. 다만 세지 않고 넘기지는 않는다.
