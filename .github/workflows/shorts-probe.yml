@@ -65,6 +65,13 @@ jobs:
       # 위가 실패했을 때 "어디가" 막혔는지 본다. 1688 검색 진입로를 하나씩 때려보고
       # 상태·크기·찾은 상품 수만 낸다 (값은 찍지 않아 로그를 그대로 공유해도 안전하다).
       # 추측으로 진입로를 고르지 않으려고 만든 계측기다.
+      # ffmpeg 는 러너에 없다(실측). 렌더 점검 전에 깔아둔다.
+      - name: ffmpeg 설치
+        if: always()
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
       # 첫 영상까지 가는 경로에서 아직 한 번도 안 돌려본 둘.
       # 타입캐스트는 한 문장만 합성한다(크레딧 소모 최소). 틱톡은 브라우저가 필요하다.
       - name: Playwright 브라우저 설치
@@ -78,6 +85,15 @@ jobs:
         env:
           TYPECAST_API_TOKEN: ${{ secrets.TYPECAST_API_TOKEN }}
         run: npx tsx src/probe.ts ffmpeg typecast tiktok
+
+      # 타입캐스트가 403 을 준다. 값은 감추고 응답 구조만 찍어 원인을 좁힌다 —
+      # 출력에 토큰이 섞이지 않으므로 그대로 공유해도 안전하다.
+      - name: 타입캐스트 응답 구조 확인
+        if: always()
+        working-directory: shorts-factory
+        env:
+          TYPECAST_API_TOKEN: ${{ secrets.TYPECAST_API_TOKEN }}
+        run: npx tsx src/probe-typecast.ts
 
       - name: 1688 진입로 계측
         if: always()

@@ -38,9 +38,13 @@ jobs:
         with:
           python-version: '3.12'
 
-      # ubuntu-latest 러너에는 ffmpeg 가 기본 탑재되어 있다. 버전만 확인하고 넘어간다.
-      - name: ffmpeg 확인
-        run: ffmpeg -version | head -1
+      # ubuntu-latest 에 ffmpeg 가 기본 탑재라고 믿고 버전만 확인했는데, 실측에서
+      # spawn ffmpeg ENOENT 가 났다. 없는 걸 있다고 가정하면 매일 이 줄에서 죽는다.
+      - name: ffmpeg 설치
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -version | head -1
 
       - name: 의존성 설치
         working-directory: shorts-factory
