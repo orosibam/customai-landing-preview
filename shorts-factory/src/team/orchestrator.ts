@@ -164,7 +164,7 @@ export async function runLine(
  *
  * 채널은 인자로 고른다. 안 고르면 첫 번째 채널을 쓴다.
  */
-export async function runOne(channelKey?: string): Promise<SlotOutcome> {
+export async function runOne(channelKey?: string, pinnedProduct?: string): Promise<SlotOutcome> {
   const channel = channelKey
     ? CHANNELS.find((c) => c.key === channelKey)
     : CHANNELS[0];
@@ -180,7 +180,15 @@ export async function runOne(channelKey?: string): Promise<SlotOutcome> {
   const runId = await openRun(runDate);
   const key: AudienceKey =
     channel.audience ?? PLATFORM_DEFAULT_AUDIENCE[channel.platform] ?? 'general';
-  const brief: Brief = { runId, channel, audience: audienceFor(key), notes: [] };
+  const brief: Brief = {
+    runId,
+    channel,
+    audience: audienceFor(key),
+    notes: [],
+    // 지정하면 발굴을 건너뛰고 그 상품으로 간다. 수확한 소재가 특정 상품에
+    // 묶여 있어서, 매번 새로 고르면 모아둔 소재를 못 쓴다.
+    ...(pinnedProduct ? { pinnedProduct } : {}),
+  };
 
   console.log(`\n=== 한 편 제작: ${channel.key} (${channel.category}) ===\n`);
   const label = `[${channel.key}]`;

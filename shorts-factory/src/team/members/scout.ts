@@ -152,6 +152,106 @@ async function commitCandidate(
   );
 }
 
+/**
+ * DB 에 이미 있는 상품으로 브리프를 채운다.
+ *
+ * 레퍼런스(설계도 원본)도 같이 꺼낸다 — 없으면 설계도 담당이 무엇을 베낄지 모른다.
+ * 상품은 있는데 레퍼런스가 없으면 그 사실을 적어 던진다. 조용히 빈 값으로 넘기면
+ * 뒤에서 이유 없이 이상한 구조가 나온다.
+ */
+async function usePinnedProduct(brief: Brief, needle: string): Promise<Brief> {
+  const rows = await must(
+    '지정 상품 조회',
+    db()
+      .from('products')
+      .select('id, title_ko, title_zh, title_en, price_krw, score_reason')
+      .or(`title_ko.ilike.%${needle}%,title_zh.ilike.%${needle}%`)
+      .order('picked_at', { ascending: false })
+      .limit(5),
+  );
+
+  const found = rows as {
+    id: string;
+    title_ko: string;
+    title_zh: string | null;
+    title_en: string | null;
+    price_krw: number | null;
+    score_reason: string | null;
+  }[];
+
+  if (found.length === 0) {
+    throw new HandoffError('scout', `"${needle}" 로 찾히는 상품이 DB 에 없습니다.`);
+  }
+
+  // 여러 개가 맞으면 추측하지 않는다. 엉뚱한 상품으로 영상을 만드는 것보다
+  // 멈추고 어느 것인지 묻는 게 낫다.
+  const exact = found.filter(
+    (r) => r.title_ko === needle || r.title_zh === needle,
+  );
+  const picked = exact[0] ?? (found.length === 1 ? found[0] : undefined);
+  if (!picked) {
+    throw new HandoffError(
+      'scout',
+      `"${needle}" 에 맞는 상품이 ${found.length}건입니다. 더 정확히 적어주세요:\n` +
+        found.map((r) => `     · ${r.title_ko} (${r.title_zh ?? '-'})`).join('\n'),
+    );
+  }
+
+  const refRows = await must(
+    '지정 상품의 레퍼런스 조회',
+    db()
+      .from('references')
+      .select('id, external_url, platform, views, caption, outlier_score')
+      .eq('product_id', picked.id)
+      .order('created_at', { ascending: false })
+      .limit(1),
+  );
+  const ref = (refRows as {
+    id: string;
+    external_url: string;
+    platform: string;
+    views: number | null;
+    caption: string | null;
+    outlier_score: number | null;
+  }[])[0];
+
+  if (!ref) {
+    throw new HandoffError(
+      'scout',
+      `"${picked.title_ko}" 에 붙은 레퍼런스 영상이 없습니다. ` +
+        `설계도를 뽑을 원본이 없으면 구조를 베낄 수가 없습니다.`,
+    );
+  }
+
+  console.log(`지정 상품으로 갑니다: "${picked.title_ko}" (발굴 건너뜀)`);
+
+  return withNote(
+    {
+      ...brief,
+      shortlist: [],
+      product: {
+        id: picked.id,
+        titleKo: picked.title_ko,
+        // 수확 매칭은 **정확한 문자열**이라, DB 에 저장된 값을 그대로 쓴다.
+        keywordsZh: picked.title_zh ? [picked.title_zh] : [],
+        ...(picked.title_en ? { keywordEn: picked.title_en } : {}),
+        priceKrw: picked.price_krw,
+        rationale: picked.score_reason ?? '(지정 상품)',
+      },
+      reference: {
+        id: ref.id,
+        url: ref.external_url,
+        platform: ref.platform,
+        views: ref.views,
+        caption: ref.caption ?? '',
+        outlierScore: ref.outlier_score ?? 0,
+      },
+    },
+    'scout',
+    `지정 상품 "${picked.title_ko}" 로 진행합니다 (발굴 건너뜀).`,
+  );
+}
+
 export const scout: TeamMember = {
   id: 'scout',
   role: '소싱 담당',
@@ -159,6 +259,15 @@ export const scout: TeamMember = {
   charter: CHARTER,
 
   async work(brief: Brief): Promise<Brief> {
+    // "이 제품으로 만들어라" — 발굴을 통째로 건너뛴다.
+    //
+    // 소재를 사람이 수확하게 되면서 필요해졌다. 수확물은 특정 상품의 검색어에
+    // 묶여 있는데 발굴은 매번 새 상품을 고르므로, 그대로 두면 모아둔 소재가
+    // 영영 안 쓰인다.
+    if (brief.pinnedProduct) {
+      return usePinnedProduct(brief, brief.pinnedProduct);
+    }
+
     // 아래에서 퇴짜가 나 다시 온 경우. 발굴을 처음부터 하지 않는다 —
     // 인스타 탐색이 한 번에 2분 반이라, 후보 하나 떨어질 때마다 다시 긁으면
     // 재시도라는 게 사실상 불가능해진다. 지난번에 남겨둔 후보를 꺼낸다.

@@ -44,7 +44,9 @@ const COMMANDS: Record<string, () => Promise<void>> = {
 
   // 하루치를 돌리기 전에 한 편이 끝까지 가는지 본다.
   one: async () => {
-    await runOne(arg('channel'));
+    // --product 를 주면 발굴을 건너뛰고 DB 에 있는 그 상품으로 간다.
+    //   npm run stage one -- --channel=yt-gadget --product=无线高压水枪
+    await runOne(arg('channel'), arg('product'));
   },
 
   publish: async () => {
