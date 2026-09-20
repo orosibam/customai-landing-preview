@@ -159,7 +159,10 @@ ${images.length > 0 ? `첨부 ${images.length}장은 영상에서 시간순으�
           hook_type: parsed.hook_type,
           hook_duration_sec: parsed.hook_duration_sec,
           cuts,
-          appeals: parsed.appeals,
+          // 컬럼이 appeal_order 였는데 담기는 건 순서가 아니라 주장·증명 쌍이다.
+          // 0007 에서 이름을 내용에 맞췄다.
+          appeals: parsed.appeals ?? [],
+          narrative_flow: parsed.narrative_flow ?? null,
           climax_at_sec: parsed.climax_at_sec,
           cta_position: parsed.cta_position,
         })
