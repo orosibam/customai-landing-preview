@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MAX_CLIP_SEC, MIN_SOURCE_COUNT, storagePath } from '../../config.js';
 import { downloadTikTokVideo, findOverseasFootage } from '../../lib/scrapers/tiktok-discovery.js';
-import { collectClips, downloadClip } from '../../lib/scrapers/ali1688.js';
+import { collectClips, downloadClip } from '../../lib/scrapers/aliexpress.js';
 import { probe } from '../../lib/ffmpeg.js';
 import { uploadFile } from '../../lib/storage.js';
 import { db, must } from '../../lib/supabase.js';
@@ -47,28 +47,22 @@ export const sourcer: TeamMember = {
     // 섞인 실행에서 절반이 틀린 출처로 남는다.
     const sourceSites: string[] = [];
     const assetIds: string[] = [];
-    let route = '틱톡 중국어 검색';
+    let route = '알리익스프레스 상품 상세';
 
-    // 1차: 틱톡에서 중국어로 검색
-    const { videos, triedKeywords } = await findOverseasFootage(product.keywordsZh, 6);
+    // 1차: 알리익스프레스.
+    //
+    // 순서를 뒤집었다. 예전엔 틱톡 중국어 검색이 1차였는데, 러너 실측(2026-09-20)에서
+    // 틱톡이 로그인 없이 게시물 목록을 안 내주는 게 확인됐다(12번 스크롤에 0건).
+    // 1688 도 슬라이더 캡차였다. 같은 날 같은 러너에서 알리만 열렸다 —
+    // 검색 로그인 없음, 상세 5건 중 3건에 mp4 주소가 직접 박혀 있었다.
+    // 그러니 검증된 쪽이 1차여야 한다.
+    const aliKeyword = product.keywordEn?.trim();
+    const triedKeywords: string[] = [];
 
-    for (const [i, video] of videos.entries()) {
-      const path = join(dir, `tt-${i}.mp4`);
+    if (aliKeyword) {
+      triedKeywords.push(aliKeyword);
       try {
-        await downloadTikTokVideo(video.url, path);
-        localPaths.push(path);
-        sourceUrls.push(video.url);
-        sourceSites.push('tiktok');
-      } catch (e) {
-        console.warn(`해외 영상 다운로드 실패 (${video.url}): ${(e as Error).message}`);
-      }
-    }
-
-    // 2차: 부족하면 1688 상품 상세 영상으로 채운다.
-    if (localPaths.length < MIN_SOURCE_COUNT) {
-      route = localPaths.length > 0 ? '틱톡 + 1688 혼합' : '1688 상품 상세';
-      try {
-        const clips = await collectClips({ keywordZh: product.keywordsZh[0]! });
+        const clips = await collectClips({ keyword: aliKeyword });
         for (const [i, clip] of clips.entries()) {
           if (localPaths.length >= MIN_SOURCE_COUNT + 1) break;
           const path = join(dir, `ali-${i}.mp4`);
@@ -76,13 +70,46 @@ export const sourcer: TeamMember = {
             await downloadClip(clip.videoUrl, path);
             localPaths.push(path);
             sourceUrls.push(clip.productUrl);
-            sourceSites.push('ali1688');
+            sourceSites.push('aliexpress');
           } catch (e) {
-            console.warn(`1688 클립 실패: ${(e as Error).message}`);
+            console.warn(`알리 클립 실패: ${(e as Error).message}`);
           }
         }
       } catch (e) {
-        console.warn(`1688 보강 실패: ${(e as Error).message}`);
+        console.warn(`알리 수집 실패: ${(e as Error).message}`);
+      }
+    } else {
+      console.warn('영문 검색어(keywordEn)가 없어 알리를 건너뜁니다.');
+    }
+
+    // 2차: 부족하면 틱톡 중국어 검색으로 채운다.
+    //
+    // 지금은 러너에서 대개 0건이다. 그래도 남겨둔다 — 세션이 붙으면 그대로 살아나고,
+    // 여기서 걸리는 소재는 판매자 상품영상이 아니라 실사용 영상이라 결이 다르다.
+    if (localPaths.length < MIN_SOURCE_COUNT) {
+      const before = localPaths.length;
+      try {
+        const { videos, triedKeywords: zhTried } = await findOverseasFootage(product.keywordsZh, 6);
+        triedKeywords.push(...zhTried);
+
+        for (const [i, video] of videos.entries()) {
+          if (localPaths.length >= MIN_SOURCE_COUNT + 1) break;
+          const path = join(dir, `tt-${i}.mp4`);
+          try {
+            await downloadTikTokVideo(video.url, path);
+            localPaths.push(path);
+            sourceUrls.push(video.url);
+            sourceSites.push('tiktok');
+          } catch (e) {
+            console.warn(`틱톡 영상 다운로드 실패 (${video.url}): ${(e as Error).message}`);
+          }
+        }
+      } catch (e) {
+        console.warn(`틱톡 보강 실패: ${(e as Error).message}`);
+      }
+
+      if (localPaths.length > before) {
+        route = before > 0 ? '알리 + 틱톡 혼합' : '틱톡 중국어 검색';
       }
     }
 
@@ -90,7 +117,7 @@ export const sourcer: TeamMember = {
       throw new HandoffError(
         'sourcer',
         `"${product.titleKo}" 소재가 ${localPaths.length}개뿐입니다 (최소 ${MIN_SOURCE_COUNT}개). ` +
-          `시도한 검색어: ${triedKeywords.join(', ')}. 소재가 적으면 소스당 사용 길이가 ` +
+          `시도한 검색어: ${triedKeywords.join(', ') || '(없음)'}. 소재가 적으면 소스당 사용 길이가 ` +
           `${MAX_CLIP_SEC}초 상한을 넘게 되어 편집이 불가능합니다.`,
         true,
       );
