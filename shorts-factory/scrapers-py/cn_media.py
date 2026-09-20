@@ -379,14 +379,48 @@ def _ali_variants(keyword: str) -> list[tuple[str, str, bool]]:
     ]
 
 
-def ali_probe(keyword: str) -> list[dict[str, Any]]:
+def ali_probe(keyword: str) -> dict[str, Any]:
     """
-    검색 진입로를 하나씩 재본다. 값은 찍지 않고 상태·크기·찾은 상품 수만 낸다 —
+    1688 이 어디서 막히는지 재본다. 값은 찍지 않고 상태·크기·찾은 상품 수만 낸다 —
     출력을 그대로 공유해도 안전해야 한다.
 
-    상품 id 를 하나라도 찾으면 그 id 로 상세 페이지까지 같이 확인한다. 상세가 되는지는
-    검색과 별개 문제이고, 실제로 영상을 받은 경로는 상세 쪽이었다.
+    진입로별 비교만으로는 「검색만 막혔나, 이 IP 가 통째로 막혔나」를 구분할 수 없다.
+    그래서 홈과 상세를 같이 잰다:
+      · 홈까지 1KB 대 조각이면 → 이 IP 가 통째로 막힌 것 (요청을 바꿔도 소용없다)
+      · 홈·상세는 멀쩡한데 검색만 조각이면 → 검색 경로만 보호된 것
+    샤오홍슈는 같은 IP·같은 TLS 지문으로 183KB 를 받았으므로 지문 문제는 아니다.
     """
+    results: dict[str, Any] = {"reach": [], "search": []}
+
+    session = new_session()
+    for name, url in (
+        ("home", "https://www.1688.com/"),
+        # 상세가 열리는지만 본다. 없는 상품이어도 1688 이 응답하면 실제 페이지가 오고,
+        # 차단이면 검색과 똑같은 1KB 대 조각이 온다. 크기로 갈린다.
+        ("detail", ALI_DETAIL.format(id="600000000000")),
+    ):
+        row: dict[str, Any] = {"route": name}
+        try:
+            res = session.get(url, timeout=30)
+            row.update(
+                {
+                    "status": res.status_code,
+                    "bytes": len(res.text),
+                    "looksBlocked": len(res.text) < 5_000,
+                }
+            )
+        except Exception as e:  # noqa: BLE001
+            row["error"] = f"{type(e).__name__}: {e}"
+        results["reach"].append(row)
+        polite_sleep()
+
+    for row in _ali_search_probe(keyword):
+        results["search"].append(row)
+
+    return results
+
+
+def _ali_search_probe(keyword: str) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
 
     for name, url, warm in _ali_variants(keyword):
