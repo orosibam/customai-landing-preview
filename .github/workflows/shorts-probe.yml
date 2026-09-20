@@ -127,6 +127,16 @@ jobs:
         working-directory: shorts-factory
         run: npx tsx src/probe-benchmark.ts homestory.official
 
+      # 발굴 담당을 틱톡 → 인스타로 옮긴다. 틱톡은 러너에서 게시물 목록을 안 내주고
+      # (실측: 12번 스크롤에 0건) 사용자 쪽 틱톡 로그인도 지금 안 된다.
+      # 세션을 넣을 가치가 있는지 판단하려면 비로그인/세션 둘 다 재야 한다.
+      - name: 인스타 릴스 발굴 가능 여부
+        if: always()
+        working-directory: shorts-factory
+        env:
+          INSTAGRAM_STORAGE_STATE: ${{ secrets.INSTAGRAM_STORAGE_STATE }}
+        run: npx tsx src/probe-instagram.ts carcleaning
+
       # 제휴사 매칭(②)의 첫 동작이 "이 제품이 쿠팡에 있나" 다. 1688 에서 열릴 거라
       # 가정하고 파이프라인을 얹었다가 캡차 벽인 걸 뒤늦게 안 실수를 반복하지 않는다.
       - name: 쿠팡 검색 (제휴사 매칭 1단계)
