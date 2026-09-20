@@ -92,6 +92,19 @@ jobs:
       # evaluate 안에 함수를 선언하면 브라우저에 __name 이 없어 터진다(tsx/esbuild).
       # 이것 때문에 인스타 릴스 읽기가 전부 실패해 발굴이 0건이 됐던 적이 있다.
       # 네트워크를 안 쓰고 몇 초면 끝나므로 LLM 비용을 쓰기 전에 여기서 확인한다.
+      # 성우가 죽어 있으면 LLM 을 쓰기 전에 여기서 멈춘다.
+      #
+      # 19차가 ①~⑤(소싱·제휴·소재·구조분석·대본)를 다 돌고 나서 ⑥ 성우의 403 으로
+      # 죽었다. 그 앞의 네 단계가 LLM 비용을 이미 다 쓴 뒤다. 나레이션이 안 되면
+      # 영상도 안 나오므로, 싼 확인을 먼저 한다.
+      #
+      # 이 점검은 값을 찍지 않고 응답 구조만 본다 — 로그를 그대로 공유해도 안전하다.
+      - name: 나레이션 경로 확인 (LLM 쓰기 전)
+        working-directory: shorts-factory
+        env:
+          TYPECAST_API_TOKEN: ${{ secrets.TYPECAST_API_TOKEN }}
+        run: npx tsx src/probe-typecast.ts
+
       - name: 브라우저 evaluate 심 확인
         working-directory: shorts-factory
         run: npx tsx src/lib/browser.shim.test.ts

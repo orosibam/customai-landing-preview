@@ -317,7 +317,15 @@ export async function narrate(
       } catch (e) {
         if (e instanceof TypecastApiError && (e.status === 401 || e.status === 403 || e.status === 429)) {
           // 인증 실패나 한도 초과면 나머지 문장도 똑같이 실패한다. 경로를 바꾼다.
-          console.warn(`타입캐스트 API 사용 불가(${e.status}) → 브라우저 경로로 전환합니다.`);
+          //
+          // **응답 본문을 반드시 같이 찍는다.** 전에는 상태 코드만 찍고 넘어갔는데,
+          // 그러면 로그에 남는 마지막 말이 "웹 자동화가 아직 구현되지 않았습니다" 가
+          // 되어 **원인이 미구현인 것처럼 보인다.** 진짜 원인은 그 앞의 403 이고,
+          // 왜 403 인지는 본문에만 적혀 있다(키 거부인지, 요금제인지, 보이스 권한인지).
+          console.warn(
+            `타입캐스트 API 사용 불가 — ${e.message}\n` +
+              `   구조만 안전하게 확인하려면: npm run probe:typecast`,
+          );
           mode = 'browser';
           await synthesizeViaBrowser(normalized.text, preset, audioPath);
         } else {
