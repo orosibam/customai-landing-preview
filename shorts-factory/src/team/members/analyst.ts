@@ -1,9 +1,5 @@
-import { mkdtemp, readFile, readdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { askJson } from '../../lib/llm.js';
-import { extractFrames } from '../../lib/ffmpeg.js';
-import { downloadTikTokVideo } from '../../lib/scrapers/tiktok-discovery.js';
+import { captureReelFrames } from '../../lib/scrapers/instagram-discovery.js';
 import { db, must } from '../../lib/supabase.js';
 import { fail, HandoffError, withNote, type Brief, type ReviewResult, type TeamMember } from '../types.js';
 
@@ -81,11 +77,17 @@ export const analyst: TeamMember = {
     if (!reference) throw new HandoffError('analyst', '레퍼런스가 넘어오지 않았습니다.');
 
     let frameFailure = '';
-    const images = await sampleFrames(reference.url).catch((e) => {
-      frameFailure = (e as Error).message;
-      console.warn(`프레임 추출 실패, 캡션만으로 진행: ${frameFailure}`);
-      return [] as { base64: string; mediaType: 'image/jpeg' }[];
-    });
+    let capturedCaption = '';
+    const images = await sampleFrames(reference.url)
+      .then((r) => {
+        capturedCaption = r.caption;
+        return r.images;
+      })
+      .catch((e) => {
+        frameFailure = (e as Error).message;
+        console.warn(`릴스 화면 캡처 실패: ${frameFailure}`);
+        return [] as { base64: string; mediaType: 'image/jpeg' }[];
+      });
 
     // 프레임도 없고 캡션도 없으면 **원본에서 읽은 게 하나도 없다.**
     //
@@ -96,14 +98,28 @@ export const analyst: TeamMember = {
     //
     // 멈추지는 않는다(영상 자체는 만들 수 있다). 대신 크게 적어 승인 화면까지
     // 올려보낸다. 사람이 보고 판단할 몫이다.
-    const blind = images.length === 0 && !reference.caption?.trim();
-    if (blind) {
-      console.warn(
-        `⚠️  원본 릴스에서 읽은 것이 하나도 없습니다 (프레임 0장, 캡션 없음).\n` +
-          `   ${frameFailure || '(프레임 추출은 시도되지 않았습니다)'}\n` +
-          `   지금 만드는 설계도는 "터진 구조" 가 아니라 상품명만 보고 지어낸 것입니다.`,
+    // 프레임이 없으면 **만들지 않는다.**
+    //
+    // 예전에는 경고만 남기고 진행했다. 그러면 LLM 이 상품명만 보고 설계도를
+    // 지어내고, 영상은 멀쩡히 나온다 — "해외에서 터진 구조를 베낀다" 는 이
+    // 시스템의 전제가 통째로 사라진 채로. 그건 평범한 창작 대본 생성기이고,
+    // 그 차이가 이 프로젝트의 존재 이유다.
+    //
+    // 그래서 멈춘다. retryable 이라 소싱 담당이 다른 릴스로 다시 간다.
+    if (images.length === 0) {
+      throw new HandoffError(
+        'analyst',
+        `원본 릴스에서 화면을 한 장도 못 읽었습니다 — 설계도를 만들지 않습니다.\n` +
+          `   ${frameFailure || '(캡처를 시도하지 않았습니다)'}\n` +
+          `   릴스: ${reference.url}\n` +
+          `   여기서 그냥 진행하면 상품명만 보고 지어낸 구조가 나옵니다. ` +
+          `이 파이프라인은 "이미 터진 구조를 베끼는 것" 이 전제라, 그걸 잃으면 만들 이유가 없습니다.`,
+        true,
       );
     }
+
+    // 캡션은 캡처할 때 같이 주워온 걸 우선한다 — 수집 시점의 DB 값보다 최신이다.
+    const caption = capturedCaption.trim() || reference.caption?.trim() || '';
 
     const { audience } = brief;
 
@@ -111,7 +127,7 @@ export const analyst: TeamMember = {
       `이 숏폼의 구조를 분해해라.
 
 원본 조회수: ${(reference.views ?? 0).toLocaleString()}회
-캡션: ${reference.caption || '(없음)'}
+캡션: ${caption || '(없음)'}
 상품: ${brief.product?.titleKo ?? '-'}
 ${images.length > 0 ? `첨부 ${images.length}장은 영상에서 시간순으로 뽑은 프레임이다.` : ''}
 
@@ -186,12 +202,9 @@ ${images.length > 0 ? `첨부 ${images.length}장은 영상에서 시간순으�
       `${parsed.hook_type} 훅 / 컷 ${cuts.length}개 / ` +
       `소구 [${(parsed.appeals ?? []).map((a) => a.point).join(' → ')}]. ` +
         `흐름: ${parsed.narrative_flow}`,
-      blind
-        ? '⚠️ 원본 릴스에서 읽은 것이 없습니다(프레임 0장·캡션 없음). 이 설계도는 ' +
-          '터진 구조를 베낀 게 아니라 상품명만 보고 지어낸 것입니다.'
-        : images.length === 0
-          ? '원본 영상을 못 받아 캡션만으로 추론했습니다. 정확도가 떨어집니다.'
-          : undefined,
+      images.length < 4
+        ? `원본 릴스에서 ${images.length}장만 읽었습니다. 컷 전환을 다 못 봤을 수 있습니다.`
+        : undefined,
     );
   },
 
@@ -222,19 +235,23 @@ ${images.length > 0 ? `첨부 ${images.length}장은 영상에서 시간순으�
   },
 };
 
+/**
+ * 릴스에서 프레임을 얻는다 — **화면을 찍는다.**
+ *
+ * 예전엔 영상 파일을 받아 ffmpeg 으로 프레임을 떴다. 인스타가 영상을 조각으로
+ * 쪼개 보내기 때문에 그 방식은 계속 "Invalid data found" 로 실패했고, 그때마다
+ * 설계도가 상품명만 보고 지어내졌다. 우리는 원본 픽셀을 한 프레임도 쓰지 않으므로
+ * 파일이 필요 없다 — 브라우저가 그려낸 화면을 찍으면 된다.
+ */
 async function sampleFrames(
-  videoUrl: string,
-): Promise<{ base64: string; mediaType: 'image/jpeg' }[]> {
-  const dir = await mkdtemp(join(tmpdir(), 'analyst-'));
-  const videoPath = join(dir, 'ref.mp4');
-  await downloadTikTokVideo(videoUrl, videoPath);
-  await extractFrames(videoPath, join(dir, 'frame-%02d.jpg'), 8);
-
-  const files = (await readdir(dir)).filter((f) => f.startsWith('frame-')).sort();
-  return Promise.all(
-    files.map(async (f) => ({
-      base64: (await readFile(join(dir, f))).toString('base64'),
+  reelUrl: string,
+): Promise<{ images: { base64: string; mediaType: 'image/jpeg' }[]; caption: string }> {
+  const { frames, caption } = await captureReelFrames(reelUrl, 8);
+  return {
+    images: frames.map((b) => ({
+      base64: b.toString('base64'),
       mediaType: 'image/jpeg' as const,
     })),
-  );
+    caption,
+  };
 }

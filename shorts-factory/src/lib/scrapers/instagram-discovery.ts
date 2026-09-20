@@ -253,3 +253,85 @@ export async function downloadReel(videoUrl: string, outPath: string): Promise<v
   }
   await writeFile(outPath, bytes);
 }
+
+/**
+ * 릴스에서 **화면을 찍어** 프레임을 얻는다.
+ *
+ * ## 왜 내려받지 않고 찍는가
+ *
+ * 영상을 파일로 받으려다 계속 실패했다. 실측:
+ *
+ *   /tmp/analyst-*\/ref.mp4: Invalid data found when processing input
+ *   [mpegts] Format mpegts detected only with low score of 2
+ *   Output file does not contain any stream
+ *
+ * 인스타는 영상을 통째로 주지 않고 **조각(segment)으로 쪼개** 보낸다. 페이지에서
+ * 가로챈 mp4 요청 하나는 그 조각이고, 컨테이너가 없는 바이트 덩어리라 ffmpeg 이
+ * 스트림을 못 찾는다. Referer 를 고쳐도 마찬가지였다 — 주소 문제가 아니라
+ * **받아온 것이 영상 파일이 아닌** 문제다.
+ *
+ * 그런데 우리는 원본의 픽셀을 **한 프레임도 쓰지 않는다.** 화면은 수확한 판매자
+ * 영상으로 채우고, 릴스에서 가져오는 건 구조뿐이다. 그러면 파일이 필요 없다 —
+ * 재생되는 화면을 찍으면 된다. 조각이든 통짜든 브라우저는 어차피 그려낸다.
+ *
+ * ## 구조 분석에 이게 왜 필수인가
+ *
+ * 프레임이 0장이면 LLM 은 상품명만 보고 설계도를 지어낸다. 그러면 "해외에서 터진
+ * 구조를 베낀다" 는 이 시스템의 전제가 통째로 사라지고, 매일 창작 대본을 뽑는
+ * 평범한 생성기가 된다. 그 차이가 이 프로젝트의 존재 이유다.
+ */
+export async function captureReelFrames(
+  reelUrl: string,
+  count = 8,
+): Promise<{ frames: Buffer[]; caption: string }> {
+  return withContext(
+    { locale: 'en-US', timezone: 'America/Los_Angeles' },
+    async (ctx) => {
+      const page = await ctx.newPage();
+      await page.goto(reelUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+      await pause(2_500, 4_000);
+
+      const video = page.locator('video').first();
+      await video.waitFor({ state: 'visible', timeout: 20_000 }).catch(() => {});
+
+      const has = await page.locator('video').count();
+      if (has === 0) {
+        throw new Error(
+          `릴스 페이지에 video 요소가 없습니다: ${reelUrl}\n` +
+            `   로그인 화면으로 튕겼거나 게시물이 내려갔을 수 있습니다.`,
+        );
+      }
+
+      // 재생시킨다. 정지 상태로 찍으면 같은 첫 프레임이 8장 나오고,
+      // 그건 "컷이 어떻게 넘어가는가" 를 하나도 안 알려준다.
+      await page.evaluate(() => {
+        for (const v of Array.from(document.querySelectorAll('video'))) {
+          v.muted = true;
+          v.loop = true;
+          void v.play().catch(() => {});
+        }
+      });
+
+      const caption =
+        (await page.locator('h1').first().textContent().catch(() => ''))?.trim() ?? '';
+
+      const frames: Buffer[] = [];
+      for (let i = 0; i < count; i++) {
+        await page.waitForTimeout(1_200);
+        try {
+          frames.push(await video.screenshot({ type: 'jpeg', quality: 70 }));
+        } catch (e) {
+          console.warn(`프레임 ${i} 캡처 실패: ${(e as Error).message}`);
+        }
+      }
+
+      await page.close();
+
+      if (frames.length === 0) {
+        throw new Error(`릴스에서 프레임을 한 장도 못 찍었습니다: ${reelUrl}`);
+      }
+      console.log(`릴스 프레임 ${frames.length}장 캡처 (${reelUrl})`);
+      return { frames, caption };
+    },
+  );
+}
