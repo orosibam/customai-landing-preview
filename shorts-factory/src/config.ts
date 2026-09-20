@@ -218,8 +218,11 @@ export const PRODUCT_COOLDOWN_DAYS = 21;
  */
 export const UPLOAD_JITTER_MINUTES = { min: 15, max: 240 } as const;
 
-/** 유튜브 쇼핑 제휴 태그가 열리는 구독자 기준. 미만이면 인포크링크 모드. */
-export const YT_SHOPPING_SUBSCRIBER_THRESHOLD = 500;
+// 유튜브 쇼핑 태그 승격 기준(YT_SHOPPING_SUBSCRIBER_THRESHOLD) 은 없앴다.
+// 구독자 수만으로 판정하던 값인데, 실제 관문은 YPP 가입이고 쇼츠 채널엔 「90일 내
+// 300만 조회」가 더 붙는다. 무엇보다 쇼핑 태그 부착에 공개 API 가 없어서, 승격되는
+// 순간 링크가 안 붙는다 — 성장이 고장의 방아쇠가 되는 구조였다. 자세한 사정은
+// lib/affiliate.ts 의 resolveLinkMode 주석에 있다.
 
 // ---------------------------------------------------------------------------
 // 모델

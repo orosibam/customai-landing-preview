@@ -18,7 +18,7 @@ import { selfcheck } from './lib/scrapers/cn-bridge.js';
 import { outlierScore } from './lib/scrapers/types.js';
 import { closeBrowser } from './lib/browser.js';
 import { probe as probeMedia } from './lib/ffmpeg.js';
-import { optionalEnv } from './config.js';
+import { CHANNELS, optionalEnv } from './config.js';
 
 interface Check {
   name: string;
@@ -134,8 +134,22 @@ const CHECKS: Check[] = [
     name: 'youtube-audit',
     blocking: true,
     run: async () => {
-      if (!optionalEnv('YOUTUBE_CREDENTIALS_YT_KITCHEN', '')) {
-        throw new Error('채널 자격증명이 없습니다. OAuth refresh token 을 먼저 발급하세요.');
+      // 채널 이름을 손으로 박아두면 설정이 바뀔 때 조용히 엇나간다. 실제로 그랬다 —
+      // 여기가 YT_KITCHEN 을 보고 있었는데 유튜브 채널은 yt-gadget 하나뿐이라,
+      // 자격증명을 제대로 넣어도 점검이 실패했다. 설정에서 직접 끌어온다.
+      const channels = CHANNELS.filter((c) => c.platform === 'youtube');
+      if (channels.length === 0) throw new Error('config.ts 의 CHANNELS 에 유튜브 채널이 없습니다.');
+
+      const missing = channels.filter(
+        (c) => !optionalEnv(`YOUTUBE_CREDENTIALS_${c.key.toUpperCase().replace(/-/g, '_')}`, ''),
+      );
+      if (missing.length > 0) {
+        throw new Error(
+          `자격증명이 없는 채널: ${missing.map((c) => c.key).join(', ')}. ` +
+            `환경변수 ${missing
+              .map((c) => `YOUTUBE_CREDENTIALS_${c.key.toUpperCase().replace(/-/g, '_')}`)
+              .join(', ')} 에 OAuth refresh token 을 넣으세요.`,
+        );
       }
       return (
         '자격증명 확인됨. ⚠️ 이 점검으로는 감사 통과 여부를 알 수 없습니다 — ' +

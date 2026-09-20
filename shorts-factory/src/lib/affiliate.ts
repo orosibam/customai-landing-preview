@@ -1,13 +1,15 @@
-import { optionalEnv, YT_SHOPPING_SUBSCRIBER_THRESHOLD } from '../config.js';
+import { optionalEnv } from '../config.js';
 
 /**
  * 제휴 링크 생성.
  *
- * 원본 방법론의 "구독자 0명 비기" 를 코드로 옮긴 것. 유튜브 쇼핑 태그는 조건이
+ * 원본 방법론의 "구독자 0명 비기" 를 코드로 옮긴 것. 플랫폼 자체 쇼핑 태그는 조건이
  * 필요하지만, 인포크링크는 조건이 없어서 첫날부터 수익이 난다.
  * 실측 차이가 10% 남짓이라(유튜브 438만 vs 쿠팡파트너스 395만) 조건을 기다릴 이유가 없다.
  *
- * 채널이 조건을 넘기면 자동으로 쇼핑 태그로 승격한다.
+ * **자동 승격은 하지 않는다.** 조건을 넘겼다고 올려봐야 부착 경로가 없으면 링크가
+ * 안 붙고, 그건 잘 돌던 것이 성장을 계기로 깨지는 최악의 형태다. 승격은 그 플랫폼의
+ * 부착 자동화가 실제로 붙은 뒤에 되살린다.
  */
 
 export type LinkMode = 'inpock' | 'yt_shopping_tag' | 'naver_sticker' | 'tiktok_shop';
@@ -48,8 +50,8 @@ export interface LinkTarget {
  * 채널 상태에 따라 어떤 링크 방식을 쓸지 정한다.
  *
  * - 네이버 클립: 조건 없이 구매 링크 스티커가 붙는다. 가장 유리해서 무조건 스티커.
- * - 유튜브: 구독자가 기준을 넘으면 쇼핑 태그, 아니면 인포크링크.
- * - 인스타·틱톡: 프로필 링크 구조라 인포크링크.
+ * - 나머지 전부: 인포크링크. 유튜브 쇼핑 태그도 틱톡샵도 지금은 부착할 수단이 없다.
+ *   각 분기의 사정은 아래 주석에 적어뒀다.
  */
 export function resolveLinkMode(platform: string, subscriberCount: number): LinkMode {
   // 네이버 클립: 조건 없이 구매 링크 스티커가 붙는다. 가장 유리하므로 무조건 스티커.
@@ -60,12 +62,18 @@ export function resolveLinkMode(platform: string, subscriberCount: number): Link
   // 열리지도 않는 모드로 보내면 링크가 안 붙어 수익이 0이 된다. 프로필 링크로 간다.
   if (platform === 'tiktok') return 'inpock';
 
-  // 유튜브: 조건(구독자 + 90일 내 조회수)을 넘겨야 쇼핑 태그가 열린다.
-  if (platform === 'youtube' && subscriberCount >= YT_SHOPPING_SUBSCRIBER_THRESHOLD) {
-    return 'yt_shopping_tag';
-  }
-
-  // 그 밖에는 조건 없이 되는 인포크링크로 간다. 첫날부터 수익이 난다.
+  // 유튜브도 인포크링크로 간다. 쇼핑 태그로 자동 승격하지 않는다 — 이유는 아래.
+  //
+  // 예전엔 구독자가 500명을 넘으면 'yt_shopping_tag' 로 올렸는데, 그게 시한폭탄이었다:
+  //   1. 쇼핑 태그 부착에는 공개 API 가 없어서 publishers/youtube.ts 의 attachLink 가
+  //      그 모드를 받으면 그대로 던진다. 즉 승격되는 순간 링크가 안 붙는다.
+  //   2. 잘 돌던 인포크링크 모드가 「구독자 500명 도달」을 계기로 깨진다.
+  //      성장한 게 고장의 방아쇠가 되는 구조라 원인을 찾기도 어렵다.
+  //   3. 조건도 틀렸다. 500명은 YPP 가입 조건의 일부일 뿐이고, 쇼츠 채널은
+  //      여기에 「90일 내 300만 조회」가 더 붙는다. 구독자 수만 보고 승격할 수 없다.
+  //
+  // 쇼핑 태그는 Studio 브라우저 자동화가 실제로 붙은 뒤에 되살린다. 그때는 조건도
+  // 구독자 수가 아니라 「YPP 가입 여부」로 판정해야 한다 — 그게 진짜 관문이다.
   return 'inpock';
 }
 
