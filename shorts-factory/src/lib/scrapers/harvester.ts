@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { withContext, pause, SessionExpiredError } from '../browser.js';
 import { optionalEnv } from '../../config.js';
 import { db, must } from '../supabase.js';
@@ -46,6 +47,8 @@ export interface HarvestResult {
 
 interface SiteSpec {
   storageEnv: string;
+  /** npm run capture 가 세션을 떨구는 파일 이름 (.sessions/<key>.json) */
+  sessionKey: string;
   label: string;
   searchUrl: (keyword: string) => string;
   /** 이 패턴에 맞는 href 만 남긴다 */
@@ -59,6 +62,7 @@ interface SiteSpec {
 const SITES: Record<LinkPlatform, SiteSpec> = {
   xiaohongshu: {
     storageEnv: 'XIAOHONGSHU_STORAGE_STATE',
+    sessionKey: 'xhs',
     label: '샤오홍슈',
     searchUrl: (k) =>
       `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(k)}&type=video`,
@@ -71,6 +75,7 @@ const SITES: Record<LinkPlatform, SiteSpec> = {
   },
   ali1688: {
     storageEnv: 'ALI1688_STORAGE_STATE',
+    sessionKey: 'ali',
     label: '1688',
     searchUrl: (k) => `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(k)}`,
     keep: (u) => /detail\.1688\.com\/offer\/\d+/.test(u),
@@ -89,19 +94,38 @@ const SCROLL_ROUNDS = Number(optionalEnv('HARVEST_SCROLL_ROUNDS', '10'));
  * 같은 키워드를 다시 수확해도 안전하다 — URL 전체로 unique 가 걸려 있어 겹치는 건
  * 그냥 무시된다. 새로 몇 건이 들어갔는지만 센다.
  */
+/**
+ * 로그인 세션을 찾는다.
+ *
+ * `npm run capture` 가 `.sessions/<key>.json` 에 파일로 떨군다. 그걸 다시 손으로
+ * .env 에 복사하게 하면 단계가 하나 늘고, 그 단계에서 사람이 막힌다.
+ * 그래서 **파일이 있으면 그냥 쓴다.** 환경변수는 파일이 없는 곳(Actions 러너)용이다.
+ */
+async function loadSession(site: SiteSpec): Promise<string> {
+  const fromEnv = optionalEnv(site.storageEnv, '');
+  if (fromEnv) return fromEnv;
+
+  const path = `.sessions/${site.sessionKey}.json`;
+  const fromFile = await readFile(path, 'utf8').catch(() => '');
+  if (fromFile) {
+    console.log(`${site.label} 세션을 ${path} 에서 읽었습니다.`);
+    return fromFile;
+  }
+
+  throw new SessionExpiredError(
+    site.label,
+    `로그인 세션이 없습니다. \`npm run capture ${site.sessionKey}\` 로 한 번만 ` +
+      `로그인하면 그 뒤로는 자동으로 돕니다. ` +
+      `(${path} 파일이나 ${site.storageEnv} 환경변수 중 하나만 있으면 됩니다)`,
+  );
+}
+
 export async function harvest(
   platform: LinkPlatform,
   keyword: string,
 ): Promise<HarvestResult> {
   const site = SITES[platform];
-  const storageState = optionalEnv(site.storageEnv, '');
-  if (!storageState) {
-    throw new SessionExpiredError(
-      site.label,
-      `로그인 세션이 없습니다. npm run capture ${platform === 'xiaohongshu' ? 'xhs' : 'ali'} 로 ` +
-        `한 번만 로그인하면 그 뒤로는 자동으로 돕니다.`,
-    );
-  }
+  const storageState = await loadSession(site);
 
   const links = await withContext(
     { storageState, locale: site.locale, timezone: site.timezone },
