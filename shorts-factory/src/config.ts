@@ -8,10 +8,31 @@
 export type Platform = 'youtube' | 'naverclip' | 'instagram' | 'tiktok';
 export type ReferencePlatform = 'xiaohongshu' | 'tiktok' | 'instagram';
 
+/**
+ * 로컬에서 돌릴 때 `.env` 파일을 읽어온다.
+ *
+ * Actions 에서는 secrets 가 환경변수로 들어오므로 파일이 없고, 그건 정상이다.
+ * 없으면 조용히 넘어간다 — 여기서 죽으면 CI 가 이유 없이 빨개진다.
+ *
+ * Node 22 내장 기능이라 dotenv 의존성을 더하지 않는다. 의존성 하나를 아끼자는 게
+ * 아니라, 처음 세팅하는 사람이 "왜 값이 안 읽히지" 로 막히는 걸 없애려는 것이다.
+ */
+try {
+  process.loadEnvFile('.env');
+} catch {
+  // .env 가 없는 환경(Actions 등). 정상이다.
+}
+
 /** 필수 환경변수를 읽는다. 없으면 즉시 죽는다 — 파이프라인 중간에 터지는 것보다 낫다. */
 export function requireEnv(name: string): string {
   const v = process.env[name];
-  if (!v) throw new Error(`환경변수 ${name} 가 없습니다. .env 또는 Actions secrets를 확인하세요.`);
+  if (!v) {
+    throw new Error(
+      `환경변수 ${name} 가 없습니다.\n` +
+        `   로컬이라면 shorts-factory/.env 파일에 ${name}=값 을 넣으세요 (.env.example 참고).\n` +
+        `   GitHub Actions 라면 저장소 Settings → Secrets and variables → Actions 를 확인하세요.`,
+    );
+  }
   return v;
 }
 
