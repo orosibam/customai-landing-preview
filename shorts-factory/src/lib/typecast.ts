@@ -16,11 +16,26 @@ import { probe } from './ffmpeg.js';
  * 원본이 쓰던 브루(Vrew) 싱크 단계를 통째로 건너뛸 수 있다.
  */
 
+/**
+ * API 가 받는 감정 프리셋 전체 목록.
+ *
+ * 실측(2026-09-20): 여기 없는 값을 보내면 422 로 거부된다. 예전 형식인 'normal-1'
+ * 같은 접미사 붙은 값을 쓰고 있었고 그대로 막혔다. 문자열로 두면 오타나 옛 형식이
+ * 조용히 들어와 합성 단계에서야 터지므로, 타입으로 좁혀 컴파일 때 잡는다.
+ */
+export const EMOTION_PRESETS = [
+  'normal', 'sad', 'happy', 'angry', 'regret', 'urgent', 'whisper', 'scream',
+  'shout', 'trustful', 'soft', 'cold', 'sarcasm', 'inspire', 'cute', 'cheer',
+  'casual', 'tonemid', 'toneup', 'tonedown',
+] as const;
+
+export type EmotionPreset = (typeof EMOTION_PRESETS)[number];
+
 export interface VoicePreset {
-  /** 타입캐스트 액터(성우) 식별자 */
+  /** 타입캐스트 voice_id (기존 액터 ID와 같은 형식: tc_ + 24자) */
   actorId: string;
-  /** 감정 프리셋 */
-  emotion: string;
+  /** 감정 프리셋. EMOTION_PRESETS 밖의 값은 API 가 422 로 거부한다. */
+  emotion: EmotionPreset;
   /** 피치. 영상에서 +1이 적정, +2는 과하다고 판정됐다. */
   pitch: number;
   /** 읽기 속도 배율 */
@@ -46,7 +61,7 @@ export const VOICE_PRESETS: Record<string, VoicePreset> = {
   // 생활·수납용품 채널
   'warm-female': {
     actorId: optionalEnv('TYPECAST_ACTOR_WARM_FEMALE', 'tc_65a0e1eb23a607b9906c0154'),
-    emotion: 'normal-1',
+    emotion: 'normal',
     pitch: 1,
     speed: 1.0,
     pauseSec: 0,
@@ -54,7 +69,7 @@ export const VOICE_PRESETS: Record<string, VoicePreset> = {
   // 주방용품 채널
   'calm-female': {
     actorId: optionalEnv('TYPECAST_ACTOR_CALM_FEMALE', 'tc_69f2e455ea79fd197aa0476f'),
-    emotion: 'normal-1',
+    emotion: 'normal',
     pitch: 0,
     speed: 0.98,
     pauseSec: 0,
@@ -62,7 +77,7 @@ export const VOICE_PRESETS: Record<string, VoicePreset> = {
   // 생활·인테리어 채널
   'soft-female': {
     actorId: optionalEnv('TYPECAST_ACTOR_SOFT_FEMALE', 'tc_68d4b115f0486108a7eefb37'),
-    emotion: 'normal-1',
+    emotion: 'normal',
     pitch: 1,
     speed: 1.0,
     pauseSec: 0,
@@ -70,7 +85,7 @@ export const VOICE_PRESETS: Record<string, VoicePreset> = {
   // 가전·가젯 채널
   'energetic-male': {
     actorId: optionalEnv('TYPECAST_ACTOR_ENERGETIC_MALE', 'tc_6a4f2130d153a5cac8e19996'),
-    emotion: 'happy-1',
+    emotion: 'happy',
     pitch: 1,
     speed: 1.1,
     pauseSec: 0,
@@ -78,7 +93,7 @@ export const VOICE_PRESETS: Record<string, VoicePreset> = {
   // 뷰티·헬스 채널
   'bright-male': {
     actorId: optionalEnv('TYPECAST_ACTOR_BRIGHT_MALE', 'tc_6a7446c19f2d7dfed990a900'),
-    emotion: 'happy-1',
+    emotion: 'happy',
     pitch: 1,
     speed: 1.05,
     pauseSec: 0,
