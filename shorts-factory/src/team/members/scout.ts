@@ -1,0 +1,232 @@
+import { askJson } from '../../lib/llm.js';
+import { discoverHotVideos, SEED_KEYWORDS, type HotVideo } from '../../lib/scrapers/tiktok-discovery.js';
+import { db, must } from '../../lib/supabase.js';
+import { PRODUCT_COOLDOWN_DAYS } from '../../config.js';
+import { fail, HandoffError, PASS, withNote, type Brief, type ReviewResult, type TeamMember } from '../types.js';
+
+/**
+ * 소싱 담당.
+ *
+ * 앞선 설계는 상품을 먼저 정하고 레퍼런스를 나중에 찾았다. 틱톡 쇼핑은 순서가 반대다.
+ * "꿀템" 같은 시드로 제품 리뷰 채널을 찾아 **인기순**으로 보면, 터진 영상 목록이
+ * 곧 잘 팔리는 상품 목록이다. 조회수 하나가 상품 검증과 크리에이티브 검증을
+ * 동시에 해주기 때문에 이 순서가 훨씬 빠르고 정확하다.
+ *
+ * 그래서 이 담당자는 상품과 설계도 원본을 한 번에 물어온다.
+ */
+
+const CHARTER = `너는 쇼핑 숏폼의 상품 소싱 담당이다.
+
+너의 유일한 판단 기준은 **이미 터진 영상인가** 이다. 네 취향이나 상품에 대한
+감상은 개입시키지 않는다. 조회수가 시장의 답이고, 너는 그 답을 읽을 뿐이다.
+
+상품을 고를 때 보는 것:
+1. 조회수 — 절대적으로 높을수록 좋다. 같은 채널 안에서도 유난히 터진 게 있다.
+2. 영상으로 보여줄 게 있는가 — 변화가 눈에 보이거나(before/after), 동작이 있거나,
+   크기·질감이 드러나는 상품이 유리하다. 말로 설명해야만 이해되는 상품은 불리하다.
+3. 해외에 같은 상품 영상이 있을 법한가 — 중국 제조 생활용품이면 거의 있다.
+   국내 브랜드 전용 상품이나 식품은 원본을 못 구한다.
+4. 가격대 — 충동구매가 일어나는 구간이어야 한다. 너무 싸면 수수료가 안 되고,
+   너무 비싸면 30초 영상 하나로는 안 팔린다.
+
+고르지 않는 것: 의약품, 건강기능식품, 의료기기. 효능을 단언해야 팔리는데
+그 단언이 광고 심의에 걸린다.`;
+
+interface PickResponse {
+  picks: {
+    video_url: string;
+    product_name_ko: string;
+    keywords_zh: string[];
+    keyword_en: string;
+    estimated_price_krw: number | null;
+    rationale: string;
+  }[];
+}
+
+async function recentlyUsed(): Promise<Set<string>> {
+  const since = new Date(Date.now() - PRODUCT_COOLDOWN_DAYS * 86_400_000).toISOString();
+  const { data } = await db().from('products').select('title_ko').gte('picked_at', since);
+  return new Set(((data ?? []) as { title_ko: string }[]).map((r) => r.title_ko));
+}
+
+export const scout: TeamMember = {
+  id: 'scout',
+  role: '소싱 담당',
+  expertise: '틱톡 인기순에서 이미 터진 상품과 그 영상을 찾아낸다',
+  charter: CHARTER,
+
+  async work(brief: Brief): Promise<Brief> {
+    const seeds = [...brief.channel.seedKeywords, ...SEED_KEYWORDS];
+    const used = await recentlyUsed();
+
+    let hot: HotVideo[] = [];
+    const tried: string[] = [];
+
+    // 시드를 하나씩 써보다가 충분히 모이면 멈춘다.
+    for (const seed of seeds) {
+      tried.push(seed);
+      try {
+        const found = await discoverHotVideos(seed, { channelLimit: 3, perChannel: 6 });
+        hot.push(...found);
+        if (hot.length >= 12) break;
+      } catch (e) {
+        console.warn(`시드 "${seed}" 탐색 실패: ${(e as Error).message}`);
+      }
+    }
+
+    if (hot.length === 0) {
+      throw new HandoffError(
+        'scout',
+        `시드 ${tried.length}개(${tried.join(', ')})로 아무것도 못 찾았습니다. ` +
+          `틱톡 검색이 막혔거나 셀렉터가 바뀌었을 수 있습니다.`,
+        true,
+      );
+    }
+
+    // 중복 제거 + 조회수순
+    const seen = new Set<string>();
+    hot = hot
+      .filter((v) => v.videoId && !seen.has(v.videoId) && seen.add(v.videoId))
+      .sort((a, b) => (b.views ?? 0) - (a.views ?? 0))
+      .slice(0, 20);
+
+    const picked = await askJson<PickResponse>(
+      `채널 "${brief.channel.key}" (카테고리: ${brief.channel.category}, 타겟: ${brief.audience.label})에
+올릴 상품 1개를 고른다.
+
+아래는 틱톡에서 인기순으로 긁어온 영상들이다. 조회수가 이미 검증된 것들이다.
+
+${JSON.stringify(
+  hot.map((v) => ({ url: v.url, caption: v.caption, views: v.views })),
+  null,
+  2,
+)}
+
+최근 ${PRODUCT_COOLDOWN_DAYS}일 안에 이미 쓴 상품(다시 고르지 말 것):
+${[...used].join(', ') || '(없음)'}
+
+고른 영상에서 상품을 특정하고 다음을 채워라:
+- product_name_ko: 상품을 부르는 한국어 이름 (예: "무타공 전동커튼", "수세미 거치대")
+- keywords_zh: 이 상품을 중국 플랫폼에서 검색할 **중국어 간체 키워드 3~4개**.
+  한 번에 안 걸리는 경우가 많으므로 표현을 달리한 변형을 준비한다.
+  (예: 떡 만드는 기계 → ["打糕机","家用年糕机","糯米打糕机"])
+- keyword_en: 영문 검색어 1개
+- estimated_price_krw: 추정 가격. 모르면 null.
+- rationale: 왜 이 상품인지 + 영상으로 뭘 보여줄 것인지 한 문장
+
+{"picks":[{"video_url":"...","product_name_ko":"...","keywords_zh":[],"keyword_en":"...","estimated_price_krw":0,"rationale":"..."}]}`,
+      { tier: 'reasoning', system: CHARTER, maxTokens: 2000 },
+    );
+
+    const pick = picked.picks[0];
+    if (!pick) throw new HandoffError('scout', '상품을 고르지 못했습니다.', true);
+
+    const source = hot.find((v) => v.url === pick.video_url) ?? hot[0]!;
+
+    const productRow = await must(
+      '상품 저장',
+      db()
+        .from('products')
+        .insert({
+          merchant_id: await defaultMerchantId(),
+          title_ko: pick.product_name_ko,
+          title_zh: pick.keywords_zh[0] ?? null,
+          title_en: pick.keyword_en,
+          price_krw: pick.estimated_price_krw,
+          score_reason: pick.rationale,
+          picked_at: new Date().toISOString(),
+        })
+        .select('id')
+        .single(),
+    );
+
+    const refRow = await must(
+      '레퍼런스 저장',
+      db()
+        .from('references')
+        .upsert(
+          {
+            product_id: (productRow as { id: string }).id,
+            platform: 'tiktok',
+            external_id: source.videoId,
+            external_url: source.url,
+            caption: source.caption,
+            views: source.views,
+            // 절대 조회수 기반. 팔로워를 못 읽는 경우가 많아 백만 단위를 1점으로 환산한다.
+            outlier_score: (source.views ?? 0) / 1_000_000,
+          },
+          { onConflict: 'platform,external_id' },
+        )
+        .select('id')
+        .single(),
+    );
+
+    return withNote(
+      {
+        ...brief,
+        product: {
+          id: (productRow as { id: string }).id,
+          titleKo: pick.product_name_ko,
+          keywordsZh: pick.keywords_zh,
+          keywordEn: pick.keyword_en,
+          priceKrw: pick.estimated_price_krw,
+          rationale: pick.rationale,
+        },
+        reference: {
+          id: (refRow as { id: string }).id,
+          url: source.url,
+          platform: 'tiktok',
+          views: source.views,
+          caption: source.caption,
+          outlierScore: (source.views ?? 0) / 1_000_000,
+        },
+      },
+      'scout',
+      `"${pick.product_name_ko}" 선정. 원본 ${(source.views ?? 0).toLocaleString()}회. ${pick.rationale}`,
+      pick.keywords_zh.length < 2
+        ? '중국어 검색어 변형이 하나뿐이라 소재 담당이 못 찾을 수 있습니다.'
+        : undefined,
+    );
+  },
+
+  async review(brief: Brief): Promise<ReviewResult> {
+    if (!brief.product) return fail('상품이 비어 있습니다.');
+    if (!brief.reference) return fail('레퍼런스가 비어 있습니다.');
+    if (brief.product.keywordsZh.length === 0) {
+      return fail('중국어 검색어가 없습니다. 소재를 구할 방법이 없어집니다.');
+    }
+
+    const warnings: string[] = [];
+    if ((brief.reference.views ?? 0) < 300_000) {
+      warnings.push(`원본 조회수 ${brief.reference.views}회로 검증 강도가 약합니다.`);
+    }
+    return { ok: true, problems: [], warnings };
+  },
+};
+
+/** 기본 제휴사(쿠팡파트너스) 행을 찾거나 만든다. */
+async function defaultMerchantId(): Promise<string> {
+  const existing = await db()
+    .from('merchants')
+    .select('id')
+    .eq('platform', 'coupang')
+    .eq('name', '쿠팡파트너스')
+    .maybeSingle();
+  if (existing.data) return existing.data.id as string;
+
+  const created = await must(
+    '제휴사 생성',
+    db()
+      .from('merchants')
+      .insert({
+        name: '쿠팡파트너스',
+        platform: 'coupang',
+        commission_rate: 0.03,
+        // 쿠팡은 기여도 1일. 클릭 후 24시간 안에 산 것만 수수료가 잡힌다.
+        cookie_days: 1,
+      })
+      .select('id')
+      .single(),
+  );
+  return (created as { id: string }).id;
+}

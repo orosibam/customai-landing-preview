@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git branch:*)",
+      "Bash(git bundle:*)",
+      "Bash(git fetch:*)",
+      "Bash(npm install:*)",
+      "Bash(npm ci:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm run team:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx tsx src/lib/korean.test.ts)",
+      "Bash(npx tsx src/team/members/publisher.test.ts)",
+      "Bash(npx tsx src/stage.ts team)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "mcp__Supabase__list_tables",
+      "mcp__Supabase__list_projects",
+      "mcp__Supabase__list_organizations",
+      "mcp__Supabase__get_project_url",
+      "mcp__Supabase__get_advisors",
+      "mcp__Supabase__list_migrations"
+    ]
+  }
+}

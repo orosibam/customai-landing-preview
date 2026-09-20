@@ -1,0 +1,3 @@
+# cn_media.py 전용. 크롬 TLS 지문 흉내가 이 의존성의 존재 이유이며
+# requests / httpx 로 대체하면 샤오홍슈가 다시 막힌다.
+curl_cffi>=0.7

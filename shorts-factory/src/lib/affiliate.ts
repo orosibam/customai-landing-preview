@@ -1,0 +1,133 @@
+import { optionalEnv, YT_SHOPPING_SUBSCRIBER_THRESHOLD } from '../config.js';
+
+/**
+ * 제휴 링크 생성.
+ *
+ * 원본 방법론의 "구독자 0명 비기" 를 코드로 옮긴 것. 유튜브 쇼핑 태그는 조건이
+ * 필요하지만, 인포크링크는 조건이 없어서 첫날부터 수익이 난다.
+ * 실측 차이가 10% 남짓이라(유튜브 438만 vs 쿠팡파트너스 395만) 조건을 기다릴 이유가 없다.
+ *
+ * 채널이 조건을 넘기면 자동으로 쇼핑 태그로 승격한다.
+ */
+
+export type LinkMode = 'inpock' | 'yt_shopping_tag' | 'naver_sticker' | 'tiktok_shop';
+
+/**
+ * 틱톡샵 쇼핑 링크가 열리는 조건.
+ *
+ * 사업자 인증을 마쳤으면 팔로워 0명부터 바로 달 수 있다. 없으면 팔로워 1,000명만
+ * 넘기면 되고 조회수 조건은 없다 — 유튜브의 "90일 내 쇼츠 300만뷰" 와 비교하면
+ * 진입 장벽이 사실상 없는 셈이다.
+ */
+export const TIKTOK_FOLLOWER_THRESHOLD = 1_000;
+export const HAS_BUSINESS_VERIFICATION = process.env.TIKTOK_BUSINESS_VERIFIED === 'true';
+
+export interface LinkTarget {
+  productTitle: string;
+  /** 제휴사 상품 URL */
+  productUrl: string;
+  merchantPlatform: string;
+}
+
+/**
+ * 채널 상태에 따라 어떤 링크 방식을 쓸지 정한다.
+ *
+ * - 네이버 클립: 조건 없이 구매 링크 스티커가 붙는다. 가장 유리해서 무조건 스티커.
+ * - 유튜브: 구독자가 기준을 넘으면 쇼핑 태그, 아니면 인포크링크.
+ * - 인스타·틱톡: 프로필 링크 구조라 인포크링크.
+ */
+export function resolveLinkMode(platform: string, subscriberCount: number): LinkMode {
+  // 네이버 클립: 조건 없이 구매 링크 스티커가 붙는다. 가장 유리하므로 무조건 스티커.
+  if (platform === 'naverclip') return 'naver_sticker';
+
+  // 틱톡: 사업자 인증이 있으면 0명부터, 없으면 팔로워 1,000명부터.
+  if (platform === 'tiktok') {
+    const eligible = HAS_BUSINESS_VERIFICATION || subscriberCount >= TIKTOK_FOLLOWER_THRESHOLD;
+    return eligible ? 'tiktok_shop' : 'inpock';
+  }
+
+  // 유튜브: 조건(구독자 + 90일 내 조회수)을 넘겨야 쇼핑 태그가 열린다.
+  if (platform === 'youtube' && subscriberCount >= YT_SHOPPING_SUBSCRIBER_THRESHOLD) {
+    return 'yt_shopping_tag';
+  }
+
+  // 그 밖에는 조건 없이 되는 인포크링크로 간다. 첫날부터 수익이 난다.
+  return 'inpock';
+}
+
+/**
+ * 자체 도메인 리다이렉터를 경유하는 링크.
+ *
+ * 인포크링크/텐핑을 그대로 쓰면 어떤 훅이 클릭을 만들었는지 우리가 알 수 없다.
+ * 우리 도메인을 한 번 거치면 클릭 데이터를 우리가 소유하게 되고,
+ * S10이 "어떤 설계도가 돈이 됐는가" 를 계산할 수 있다.
+ */
+export function trackedUrl(destination: string, params: {
+  renderId: string;
+  channelKey: string;
+  blueprintId: string;
+}): string {
+  const base = optionalEnv('REDIRECTOR_BASE_URL', '');
+  if (!base) return destination;
+
+  const url = new URL('/go', base);
+  url.searchParams.set('u', destination);
+  url.searchParams.set('r', params.renderId);
+  url.searchParams.set('c', params.channelKey);
+  url.searchParams.set('b', params.blueprintId);
+  return url.toString();
+}
+
+/**
+ * 인포크링크 항목 번호.
+ *
+ * 틱톡·인스타는 설명란 링크가 클릭되지 않는다. 그래서 프로필에 인포크링크를 걸어두고
+ * 영상에서는 **번호로 지칭**한다 — "프로필 링크 29번". 이 번호가 빠지면 시청자가
+ * 수백 개 목록에서 상품을 못 찾아 그대로 이탈한다.
+ */
+export interface ItemRef {
+  itemNumber: number;
+  pageUrl: string;
+}
+
+/**
+ * 영상 제목.
+ *
+ * 번호 지칭을 제목에 넣는 이유는 시청자가 설명란을 펴지 않기 때문이다.
+ * 제목은 피드에서 바로 보인다.
+ */
+export function buildTitle(productTitle: string, item?: ItemRef): string {
+  const base = productTitle.trim();
+  if (!item) return base.slice(0, 80);
+  const suffix = ` · 프로필 링크 ${item.itemNumber}번`;
+  return base.slice(0, 80 - suffix.length) + suffix;
+}
+
+/** 영상 설명란에 붙일 문구. 제휴 고지를 반드시 포함한다. */
+export function buildDescription(
+  target: LinkTarget,
+  linkUrl: string,
+  hashtags: string[],
+  item?: ItemRef,
+): string {
+  const route = item
+    ? [`프로필 링크 ${item.itemNumber}번에서 확인하세요`, item.pageUrl]
+    : [`구매하기 ▶ ${linkUrl}`];
+
+  return [
+    target.productTitle,
+    '',
+    ...route,
+    '',
+    // 공정거래위원회 추천·보증 심사지침상 경제적 대가를 받는 경우 명시해야 한다.
+    '※ 이 영상은 제휴 마케팅 링크를 포함하며, 구매 시 일정액의 수수료를 받습니다.',
+    '',
+    hashtags.map((t) => `#${t}`).join(' '),
+  ].join('\n');
+}
+
+/** 고정 댓글 문구. 설명란을 안 펴는 시청자를 위한 두 번째 경로. */
+export function buildPinnedComment(linkUrl: string, item?: ItemRef): string {
+  const target = item ? `프로필 링크 ${item.itemNumber}번 ▶ ${item.pageUrl}` : `구매 링크 ▶ ${linkUrl}`;
+  return `${target}\n(제휴 링크이며 구매 시 수수료를 받습니다)`;
+}

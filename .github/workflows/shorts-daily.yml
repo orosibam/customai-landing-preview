@@ -1,0 +1,129 @@
+name: 쇼핑쇼츠 일일 생성
+
+# 매일 새벽에 10개를 생성해 승인 대기 상태로 올려둔다.
+# 제작 라인(소싱 → 소재 → 구조 → 카피 → 성우 → 편집 → 검수)까지만 돌린다.
+# 배포는 여기서 하지 않는다 — 대시보드에서 사람이 승인해야 shorts-publish 가 내보낸다.
+on:
+  schedule:
+    # 매일 20:10 UTC = 한국시간 05:10. 아침에 확인하고 승인하면 된다.
+    - cron: '10 20 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '렌더까지만 하고 DB 기록을 건너뛴다'
+        type: boolean
+        default: false
+
+concurrency:
+  # 하루치가 겹쳐 돌면 같은 상품을 두 번 쓴다.
+  group: shorts-daily
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: shorts-factory/package-lock.json
+
+      # 샤오홍슈·1688 접근만 파이썬이다. 크롬 TLS 지문을 흉내 내야(curl_cffi) SSR HTML 을
+      # 내주는데, node 에는 같은 일을 하는 검증된 수단이 없다. 자세한 사정은
+      # shorts-factory/scrapers-py/cn_media.py 의 머리말에 적어뒀다.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # ubuntu-latest 러너에는 ffmpeg 가 기본 탑재되어 있다. 버전만 확인하고 넘어간다.
+      - name: ffmpeg 확인
+        run: ffmpeg -version | head -1
+
+      - name: 의존성 설치
+        working-directory: shorts-factory
+        run: npm ci
+
+      - name: 중국 플랫폼 접근 의존성 설치
+        working-directory: shorts-factory
+        run: pip install -r scrapers-py/requirements.txt
+
+      - name: Playwright 브라우저 설치
+        working-directory: shorts-factory
+        run: npx playwright install --with-deps chromium
+
+      - name: 발음 정규화 테스트
+        working-directory: shorts-factory
+        run: npx tsx src/lib/korean.test.ts
+
+      # SSR 파싱은 네트워크 없이도 검증된다. 여기서 깨지면 소싱이 통째로 0건이 되므로
+      # 제작 라인을 돌리기 전에 잡는다.
+      - name: 중국 플랫폼 파싱 테스트
+        working-directory: shorts-factory/scrapers-py
+        run: python3 test_cn_media.py
+
+      - name: 제작 라인 실행
+        working-directory: shorts-factory
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          TYPECAST_API_TOKEN: ${{ secrets.TYPECAST_API_TOKEN }}
+
+          # 브라우저 세션(storageState JSON). 만료되면 파이프라인이 그 플랫폼만 건너뛴다.
+          # 틱톡 세션은 소싱 담당(인기순 탐색)과 소재 담당(중국어 검색)이 함께 쓴다.
+          # 로그인 없이도 긁히긴 하지만, 세션이 있으면 차단 빈도가 눈에 띄게 낮아진다.
+          #
+          # 샤오홍슈 세션은 여기 없다 — 로그인해도 검색이 열리지 않아서 쓸모가 없었고,
+          # 지금 경로(curl_cffi + SSR)는 로그인도 쿠키도 요구하지 않는다.
+          TIKTOK_STORAGE_STATE: ${{ secrets.TIKTOK_STORAGE_STATE }}
+          INSTAGRAM_STORAGE_STATE: ${{ secrets.INSTAGRAM_STORAGE_STATE }}
+
+          # 샤오홍슈 피드에서 훑을 카테고리 채널 id (쉼표 구분). 비워두면 기본 피드만 본다.
+          # 확인되지 않은 id 를 기본값으로 박으면 카테고리를 좁힌 줄 알면서 실제로는
+          # 기본 피드를 보게 되므로, 브라우저 주소창에서 확인한 값만 넣는다.
+          XHS_EXPLORE_CHANNELS: ${{ vars.XHS_EXPLORE_CHANNELS }}
+
+          # 편집자의 소재 변형. 중복 콘텐츠 판정을 피하려는 장치라
+          # 운영자가 명시적으로 켜야 한다 (기본값: 반전 끔, 확대 1.1배).
+          MIRROR_FOOTAGE: ${{ vars.MIRROR_FOOTAGE }}
+          ZOOM_FOOTAGE: ${{ vars.ZOOM_FOOTAGE }}
+
+          REDIRECTOR_BASE_URL: ${{ vars.REDIRECTOR_BASE_URL }}
+        run: npx tsx src/stage.ts daily
+
+      # 실패해도 로그는 남긴다. 어느 슬롯이 왜 죽었는지 봐야 한다.
+      - name: 실행 로그 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-log-${{ github.run_id }}
+          path: shorts-factory/*.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # 성장 분석 담당이 전날 올린 것들의 성과를 매일 집계한다.
+  # 이게 돌아야 피드백 루프가 닫힌다 — 안 돌면 공장은 매일 10개를 뱉는 난수 발생기다.
+  metrics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: shorts-factory/package-lock.json
+      - working-directory: shorts-factory
+        run: npm ci
+      - working-directory: shorts-factory
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: npx tsx src/stage.ts metrics

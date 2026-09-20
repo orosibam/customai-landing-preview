@@ -1,0 +1,76 @@
+name: 쇼핑쇼츠 배포
+
+# 대시보드에서 승인된 렌더만 유통 담당(team/members/publisher.ts)이 내보낸다.
+# 30분마다 승인 큐를 확인하므로, 승인 버튼을 누르면 30분 안에 나간다.
+# (업로드 시각 자체는 유통 담당이 다시 15~240분 범위로 흩뿌린다 — 기계적 패턴 회피)
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: '배포할 run 의 UUID (비우면 승인 대기 중인 가장 최근 run)'
+        type: string
+        required: false
+
+concurrency:
+  group: shorts-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: shorts-factory/package-lock.json
+
+      - working-directory: shorts-factory
+        run: npm ci
+
+      # 네이버 클립·틱톡 업로더는 Playwright 로 웹 화면을 직접 몬다.
+      - name: Playwright 브라우저 설치
+        working-directory: shorts-factory
+        run: npx playwright install --with-deps chromium
+
+      # run-id 를 안 주면 실행기가 승인 대기 중인 가장 최근 run 을 직접 찾는다.
+      # 승인된 게 없으면 아무것도 안 하고 정상 종료한다 — 30분마다 도는 워크플로를
+      # 빨갛게 만들 이유가 없다.
+      - name: 배포
+        working-directory: shorts-factory
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+          YOUTUBE_CREDENTIALS_YT_KITCHEN: ${{ secrets.YOUTUBE_CREDENTIALS_YT_KITCHEN }}
+          YOUTUBE_CREDENTIALS_YT_CAR: ${{ secrets.YOUTUBE_CREDENTIALS_YT_CAR }}
+
+          # 브라우저 업로드 경로용 세션(storageState JSON).
+          # 네이버 클립·틱톡·인스타는 공식 API가 없거나 심사가 필요해 자동화로 올린다.
+          NAVER_STORAGE_STATE: ${{ secrets.NAVER_STORAGE_STATE }}
+          INSTAGRAM_STORAGE_STATE: ${{ secrets.INSTAGRAM_STORAGE_STATE }}
+          TIKTOK_STORAGE_STATE: ${{ secrets.TIKTOK_STORAGE_STATE }}
+
+          # 사업자 인증이 끝났으면 팔로워 0명부터 틱톡샵 링크가 붙는다.
+          # 없으면 팔로워 1,000명 기준으로 내려가 인포크링크를 쓴다.
+          TIKTOK_BUSINESS_VERIFIED: ${{ vars.TIKTOK_BUSINESS_VERIFIED }}
+
+          # 업로드 화면 URL 이 바뀌면 코드를 고치지 않고 여기서 덮어쓴다.
+          NAVER_CLIP_UPLOAD_URL: ${{ vars.NAVER_CLIP_UPLOAD_URL }}
+          NAVER_CLIP_EDIT_URL: ${{ vars.NAVER_CLIP_EDIT_URL }}
+          TIKTOK_UPLOAD_URL: ${{ vars.TIKTOK_UPLOAD_URL }}
+          TIKTOK_CONTENT_URL: ${{ vars.TIKTOK_CONTENT_URL }}
+
+          REDIRECTOR_BASE_URL: ${{ vars.REDIRECTOR_BASE_URL }}
+        run: |
+          if [ -n "${{ inputs.run_id }}" ]; then
+            npx tsx src/stage.ts publish --run-id="${{ inputs.run_id }}"
+          else
+            npx tsx src/stage.ts publish
+          fi
