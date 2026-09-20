@@ -134,19 +134,29 @@ const DURATION_TOLERANCE = { min: 0.45, max: 2.2 } as const;
 // API 경로
 // ---------------------------------------------------------------------------
 
-const API_BASE = optionalEnv('TYPECAST_API_BASE', 'https://typecast.ai/api');
+const API_BASE = optionalEnv('TYPECAST_API_BASE', 'https://api.typecast.ai/v1');
 
 /**
  * 타입캐스트 합성.
  *
- * 한 번에 끝나지 않는다. 요청을 넣으면 **작업 상태를 볼 주소**(speak_v2_url)를 주고,
- * 합성이 끝날 때까지 그 주소를 들여다보다가 status 가 done 이 되면 그제서야
- * 오디오 주소가 채워진다.
+ * ## 이전 구현이 틀렸던 것
  *
- * 이 두 단계를 한 단계로 착각하면 상태 JSON 을 .wav 로 저장하게 된다.
- * 파일은 만들어지고 파이프라인도 안 멈추는데 소리만 없다 — 제일 나쁜 종류의 실패다.
+ * 「요청을 넣으면 상태 URL 을 주고, done 이 될 때까지 폴링한 뒤 오디오를 받는다」로
+ * 짜여 있었다. 실측(2026-09-20)에서 전부 틀린 것으로 드러났다:
  *
- * 요청/응답 매핑은 이 파일 안에만 둔다. 스펙이 바뀌면 여기만 고친다.
+ *   · 호스트  typecast.ai/api        →  api.typecast.ai/v1
+ *   · 인증    Authorization: Bearer  →  X-API-KEY
+ *   · 경로    /speak (404)           →  /text-to-speech
+ *   · 흐름    상태 URL → 폴링 → 다운로드  →  오디오가 응답 본문으로 바로 온다
+ *
+ * 옛 조합은 403 을 돌려줬는데, 403 만 보고 "요금제 문제" 로 단정했으면 엉뚱한 데를
+ * 팠을 것이다. 다른 호스트가 401 을 준 게 단서였다 — 401 은 "엔드포인트는 있는데
+ * 이 인증이 아니다" 라는 뜻이다.
+ *
+ * ## 길이는 응답에서 안 온다
+ *
+ * 헤더에 content-length 뿐이고 재생 길이가 없다. 자막 타임스탬프가 이 값에
+ * 달려 있으므로 파일을 받아 ffprobe 로 직접 잰다 (narrate 쪽에서 한다).
  */
 async function synthesizeViaApi(
   textSpoken: string,
@@ -155,95 +165,58 @@ async function synthesizeViaApi(
 ): Promise<void> {
   const token = requireEnv('TYPECAST_API_TOKEN');
 
-  const res = await fetch(`${API_BASE}/speak`, {
+  const res = await fetch(`${API_BASE}/text-to-speech`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
+      'X-API-KEY': token,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      actor_id: preset.actorId,
+      voice_id: preset.actorId,
       text: textSpoken,
-      lang: 'auto',
-      // 0.5~2.0 배. 시니어 대상은 1.25 근처를 쓴다.
-      tempo: preset.speed,
-      // 0~200. 100 이 원음이다.
-      volume: 100,
-      // 반음 단위(-12~+12). 영상에서 +1 이 적정, +2 는 과하다고 판정됐다.
-      pitch: preset.pitch,
-      emotion_tone_preset: preset.emotion,
-      xapi_hd: true,
+      model: optionalEnv('TYPECAST_MODEL', 'ssfm-v21'),
+      language: 'kor',
+      prompt: {
+        emotion_preset: preset.emotion,
+      },
+      output: {
+        // 0.5~2.0 배. 시니어 대상은 1.25 근처를 쓴다.
+        audio_tempo: preset.speed,
+        // 반음 단위. 영상에서 +1 이 적정, +2 는 과하다고 판정됐다.
+        audio_pitch: preset.pitch,
+        volume: 100,
+        audio_format: 'wav',
+      },
     }),
   });
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new TypecastApiError(res.status, `${res.status} ${res.statusText} ${body.slice(0, 300)}`);
-  }
-
-  const payload = (await res.json()) as { result?: { speak_v2_url?: string } };
-  const statusUrl = payload.result?.speak_v2_url;
-  if (!statusUrl) {
     throw new TypecastApiError(
-      200,
-      `응답에 speak_v2_url 이 없습니다: ${JSON.stringify(payload).slice(0, 300)}`,
+      res.status,
+      `${res.status} ${res.statusText} ${body.slice(0, 400)}`,
     );
   }
 
-  const audioUrl = await pollUntilDone(statusUrl, token);
+  const ctype = res.headers.get('content-type') ?? '';
+  const bytes = Buffer.from(await res.arrayBuffer());
 
-  const audio = await fetch(audioUrl);
-  if (!audio.ok) throw new TypecastApiError(audio.status, `오디오 다운로드 실패: ${audio.status}`);
-
-  const bytes = Buffer.from(await audio.arrayBuffer());
-
-  // 오디오 대신 에러 JSON 이 왔는데 200 으로 오는 경우가 있다.
-  // 무음 파일을 만들어 넘기느니 여기서 죽는 편이 낫다.
+  // 오디오 대신 JSON 이 200 으로 오는 경우가 있다. 무음 파일을 만들어 넘기느니
+  // 여기서 죽는 편이 낫다 — 소리 없는 영상은 며칠 뒤에야 발견된다.
+  if (!ctype.includes('audio') && !ctype.includes('octet-stream')) {
+    throw new TypecastApiError(
+      200,
+      `오디오가 아닌 응답입니다 (${ctype}): ${bytes.toString('utf8').slice(0, 300)}`,
+    );
+  }
   if (bytes.byteLength < 1_024) {
-    throw new TypecastApiError(200, `오디오가 ${bytes.byteLength}바이트뿐입니다. 합성이 실패했을 수 있습니다.`);
+    throw new TypecastApiError(
+      200,
+      `오디오가 ${bytes.byteLength}바이트뿐입니다. 합성이 실패했을 수 있습니다.`,
+    );
   }
 
   await writeFile(outPath, bytes);
-}
-
-/** 합성이 끝날 때까지 기다렸다가 오디오 주소를 돌려준다. */
-async function pollUntilDone(statusUrl: string, token: string): Promise<string> {
-  const startedAt = Date.now();
-  const timeoutMs = 90_000;
-  let waitMs = 700;
-
-  while (Date.now() - startedAt < timeoutMs) {
-    const res = await fetch(statusUrl, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) {
-      throw new TypecastApiError(res.status, `상태 조회 실패: ${res.status} ${res.statusText}`);
-    }
-
-    const body = (await res.json()) as {
-      result?: { status?: string; audio_download_url?: string | null };
-    };
-    const status = body.result?.status;
-
-    if (status === 'done') {
-      const url = body.result?.audio_download_url;
-      if (!url) {
-        throw new TypecastApiError(200, 'status 가 done 인데 오디오 주소가 비어 있습니다.');
-      }
-      return url;
-    }
-
-    if (status && status !== 'progress' && status !== 'started') {
-      throw new TypecastApiError(200, `합성이 "${status}" 상태로 끝났습니다.`);
-    }
-
-    await new Promise((r) => setTimeout(r, waitMs));
-    // 짧은 문장은 금방 끝나므로 처음엔 자주 보고, 길어지면 간격을 벌린다.
-    waitMs = Math.min(waitMs * 1.4, 4_000);
-  }
-
-  throw new TypecastApiError(
-    408,
-    `합성이 ${timeoutMs / 1000}초 안에 끝나지 않았습니다: ${statusUrl}`,
-  );
 }
 
 export class TypecastApiError extends Error {
