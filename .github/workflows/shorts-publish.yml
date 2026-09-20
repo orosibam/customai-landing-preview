@@ -59,7 +59,6 @@ jobs:
 
           # 사업자 인증이 끝났으면 팔로워 0명부터 틱톡샵 링크가 붙는다.
           # 없으면 팔로워 1,000명 기준으로 내려가 인포크링크를 쓴다.
-          TIKTOK_BUSINESS_VERIFIED: ${{ vars.TIKTOK_BUSINESS_VERIFIED }}
 
           # 업로드 화면 URL 이 바뀌면 코드를 고치지 않고 여기서 덮어쓴다.
           NAVER_CLIP_UPLOAD_URL: ${{ vars.NAVER_CLIP_UPLOAD_URL }}

@@ -257,7 +257,6 @@ id+토큰이 아니라 **URL 통째로** 받는다. 재조립하면 내가 아�
 | `NAVER_STORAGE_STATE` | 네이버 클립 업로드용 세션 JSON |
 | `NAVER_CLIP_UPLOAD_URL`, `NAVER_CLIP_EDIT_URL`, `TIKTOK_UPLOAD_URL`, `TIKTOK_CONTENT_URL` | 업로드 화면 URL 이 바뀌었을 때만 (선택) |
 | `YOUTUBE_CREDENTIALS_*` | 채널별 OAuth (`{client_id, client_secret, refresh_token}`) |
-| `TIKTOK_BUSINESS_VERIFIED` | `true` 면 팔로워 수와 무관하게 틱톡샵 링크 모드 |
 | `MIRROR_FOOTAGE` | `true` 면 소재를 좌우 반전. 중복 판정 회피 목적이라 기본값은 끔 |
 | `ZOOM_FOOTAGE` | 소재 확대 비율 (기본 `1.1`). 가장자리 워터마크를 프레임 밖으로 민다 |
 | `REDIRECTOR_BASE_URL` | 클릭 추적 리다이렉터 도메인 (선택) |

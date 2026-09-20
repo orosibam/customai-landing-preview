@@ -13,14 +13,29 @@ import { optionalEnv, YT_SHOPPING_SUBSCRIBER_THRESHOLD } from '../config.js';
 export type LinkMode = 'inpock' | 'yt_shopping_tag' | 'naver_sticker' | 'tiktok_shop';
 
 /**
- * 틱톡샵 쇼핑 링크가 열리는 조건.
+ * `tiktok_shop` 은 지금 도달할 수 없는 모드다.
  *
- * 사업자 인증을 마쳤으면 팔로워 0명부터 바로 달 수 있다. 없으면 팔로워 1,000명만
- * 넘기면 되고 조회수 조건은 없다 — 유튜브의 "90일 내 쇼츠 300만뷰" 와 비교하면
- * 진입 장벽이 사실상 없는 셈이다.
+ * 여기 「사업자 인증을 마치면 팔로워 0명부터 쇼핑 링크가 열린다」고 적혀 있었는데,
+ * 조사 결과 **두 제도를 섞은 것**이었다:
+ *
+ *   · 셀러(TikTok Shop) — 내 재고를 내가 파는 내 샵. 사업자 인증이 여기 걸린다.
+ *     재고와 해외 3PL 이 필요해서 이 프로젝트 모델과 맞지 않는다.
+ *   · 어필리에이트(크리에이터) — 남의 상품을 홍보하고 수수료를 받는 것. **우리가 원하는 쪽.**
+ *     조건은 팔로워 1,000명이고, 사업자 인증으로 면제되지 않는다.
+ *
+ * 게다가 2026-09 현재 **한국 틱톡샵 자체가 열려 있지 않다.** 어필리에이트는 틱톡샵이
+ * 운영되는 국가의 거주자만 가입할 수 있어서 한국 거주자는 해당이 없다.
+ * (근거·출처는 `docs/tiktok-shop-setup.md`. 다만 이 환경에서 tiktok.com 이 막혀
+ *  원문을 직접 열지 못했고, 전부 2차 출처다.)
+ *
+ * 그래서 `TIKTOK_BUSINESS_VERIFIED` 설정을 없앴다. 켜면 `tiktok_shop` 으로 가는데
+ * 그 경로는 부착 단계에서 던지고, 결국 링크가 안 붙은 영상 = 수익 0 이 된다.
+ * 틀린 전제를 믿고 켤 수 있는 스위치를 남겨두는 것보다 없는 게 낫다.
+ *
+ * 한국 오픈이 확인되면 그때 실제 화면을 보고 되살린다. `LinkMode` 의 `tiktok_shop` 과
+ * DB enum 은 그대로 둔다 — 지우면 되살릴 때 마이그레이션이 한 번 더 필요하다.
  */
 export const TIKTOK_FOLLOWER_THRESHOLD = 1_000;
-export const HAS_BUSINESS_VERIFICATION = process.env.TIKTOK_BUSINESS_VERIFIED === 'true';
 
 export interface LinkTarget {
   productTitle: string;
@@ -40,11 +55,10 @@ export function resolveLinkMode(platform: string, subscriberCount: number): Link
   // 네이버 클립: 조건 없이 구매 링크 스티커가 붙는다. 가장 유리하므로 무조건 스티커.
   if (platform === 'naverclip') return 'naver_sticker';
 
-  // 틱톡: 사업자 인증이 있으면 0명부터, 없으면 팔로워 1,000명부터.
-  if (platform === 'tiktok') {
-    const eligible = HAS_BUSINESS_VERIFICATION || subscriberCount >= TIKTOK_FOLLOWER_THRESHOLD;
-    return eligible ? 'tiktok_shop' : 'inpock';
-  }
+  // 틱톡: 한국 틱톡샵이 열려 있지 않아 어필리에이트 가입 자체가 안 된다.
+  // 팔로워가 1,000명을 넘어도 마찬가지라 조건 분기를 두지 않는다 —
+  // 열리지도 않는 모드로 보내면 링크가 안 붙어 수익이 0이 된다. 프로필 링크로 간다.
+  if (platform === 'tiktok') return 'inpock';
 
   // 유튜브: 조건(구독자 + 90일 내 조회수)을 넘겨야 쇼핑 태그가 열린다.
   if (platform === 'youtube' && subscriberCount >= YT_SHOPPING_SUBSCRIBER_THRESHOLD) {
