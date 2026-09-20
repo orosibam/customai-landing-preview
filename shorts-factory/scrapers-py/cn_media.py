@@ -356,6 +356,75 @@ def _unescape_url(url: str) -> str:
     return url.replace("\\/", "/").replace("\\u002F", "/").rstrip("\\")
 
 
+def _ali_variants(keyword: str) -> list[tuple[str, str, bool]]:
+    """
+    1688 검색 진입로 후보. (이름, URL, 홈 워밍업 여부)
+
+    s.1688.com 직접 호출이 1135바이트짜리 차단 페이지를 돌려주는 걸 실측으로 확인했다
+    (2026-09-20, GitHub 러너). 어느 진입로가 열려 있는지는 추측할 게 아니라 재봐야 해서
+    후보를 한곳에 모아두고 ali-probe 가 전부 때려본다.
+    """
+    gbk = quote(keyword, encoding="gbk")
+    utf = quote(keyword)
+    return [
+        ("s.1688-gbk", ALI_SEARCH.format(kw=gbk), False),
+        ("s.1688-gbk-warm", ALI_SEARCH.format(kw=gbk), True),
+        ("s.1688-utf8", ALI_SEARCH.format(kw=utf), False),
+        (
+            "marketOfferResultViewService",
+            f"https://search.1688.com/service/marketOfferResultViewService?keywords={utf}&beginPage=1",
+            True,
+        ),
+        ("m.1688", f"https://m.1688.com/offer_search/-6D7033.html?keywords={utf}", True),
+    ]
+
+
+def ali_probe(keyword: str) -> list[dict[str, Any]]:
+    """
+    검색 진입로를 하나씩 재본다. 값은 찍지 않고 상태·크기·찾은 상품 수만 낸다 —
+    출력을 그대로 공유해도 안전해야 한다.
+
+    상품 id 를 하나라도 찾으면 그 id 로 상세 페이지까지 같이 확인한다. 상세가 되는지는
+    검색과 별개 문제이고, 실제로 영상을 받은 경로는 상세 쪽이었다.
+    """
+    results: list[dict[str, Any]] = []
+
+    for name, url, warm in _ali_variants(keyword):
+        session = new_session()
+        row: dict[str, Any] = {"route": name, "warmed": warm}
+        try:
+            if warm:
+                # 첫 방문에서 쿠키를 받아두면 통과하는 경우가 있다.
+                session.get("https://www.1688.com/", timeout=30)
+                polite_sleep()
+            res = session.get(url, headers={"Referer": "https://www.1688.com/"}, timeout=30)
+            html = res.text
+            ids = list(dict.fromkeys(_OFFER_RE.findall(html)))
+            row.update(
+                {
+                    "status": res.status_code,
+                    "bytes": len(html),
+                    "offerIds": len(ids),
+                    # 차단 페이지는 짧고 상품 링크가 없다. 둘을 같이 봐야 구분된다.
+                    "looksBlocked": len(html) < 5_000 and not ids,
+                    "sampleId": ids[0] if ids else None,
+                }
+            )
+            if ids:
+                polite_sleep()
+                try:
+                    offer = ali_offer(ids[0])
+                    row["detailVideos"] = len(offer["videoUrls"])
+                except Exception as e:  # noqa: BLE001
+                    row["detailError"] = f"{type(e).__name__}: {e}"
+        except Exception as e:  # noqa: BLE001
+            row["error"] = f"{type(e).__name__}: {e}"
+        results.append(row)
+        polite_sleep()
+
+    return results
+
+
 def ali_search(keyword: str, limit: int) -> list[str]:
     """
     1688 검색 결과에서 상품 id 를 뽑는다.
@@ -465,6 +534,9 @@ def main() -> int:
     p = sub.add_parser("ali-offer")
     p.add_argument("--id", required=True)
 
+    p = sub.add_parser("ali-probe")
+    p.add_argument("--keyword", required=True)
+
     p = sub.add_parser("download")
     p.add_argument("--url", required=True)
     p.add_argument("--referer", default=None)
@@ -485,6 +557,8 @@ def main() -> int:
         elif args.cmd == "ali-offer":
             result = ali_offer(args.id)
             polite_sleep()
+        elif args.cmd == "ali-probe":
+            result = ali_probe(args.keyword)
         elif args.cmd == "download":
             result = download(args.url, args.referer, args.out)
         else:

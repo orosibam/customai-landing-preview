@@ -60,3 +60,11 @@ jobs:
       - name: 샤오홍슈 · 1688 접근 점검
         working-directory: shorts-factory
         run: npx tsx src/probe.ts cn-bridge xiaohongshu 1688
+
+      # 위가 실패했을 때 "어디가" 막혔는지 본다. 1688 검색 진입로를 하나씩 때려보고
+      # 상태·크기·찾은 상품 수만 낸다 (값은 찍지 않아 로그를 그대로 공유해도 안전하다).
+      # 추측으로 진입로를 고르지 않으려고 만든 계측기다.
+      - name: 1688 진입로 계측
+        if: always()
+        working-directory: shorts-factory
+        run: python3 scrapers-py/cn_media.py ali-probe --keyword 洗车液
