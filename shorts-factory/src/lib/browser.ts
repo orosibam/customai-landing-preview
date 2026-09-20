@@ -72,6 +72,38 @@ export class SessionExpiredError extends Error {
   }
 }
 
+/**
+ * 브라우저 프로필 폴더를 그대로 쓰는 컨텍스트.
+ *
+ * 왜 storageState 로 부족한가: 샤오홍슈는 쿠키만 옮겨서는 로그인이 넘어가지 않는다.
+ * 실측에서 쿠키 31개를 저장해 복원했는데도 검색 페이지가 「登录后查看搜索结果」
+ * (로그인해야 검색 결과를 볼 수 있습니다) 로 떴다. localStorage 와 브라우저 프로필에
+ * 묶인 값이 더 있다는 뜻이다.
+ *
+ * 프로필 폴더를 통째로 재사용하면 쿠키·localStorage·IndexedDB 가 전부 따라온다.
+ * 대신 이 컨텍스트는 공유 브라우저를 쓸 수 없어 매번 새로 띄운다 — 느리지만
+ * 로그인이 실제로 유지되는 쪽이 낫다.
+ */
+export async function withPersistentContext<T>(
+  userDataDir: string,
+  opts: Omit<SessionOptions, 'storageState'>,
+  fn: (ctx: BrowserContext) => Promise<T>,
+): Promise<T> {
+  const ctx = await chromium.launchPersistentContext(userDataDir, {
+    headless: process.env.HEADFUL !== 'true',
+    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    viewport: { width: 1440, height: 900 },
+    locale: opts.locale ?? 'ko-KR',
+    timezoneId: opts.timezone ?? 'Asia/Seoul',
+    ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
+  });
+  try {
+    return await fn(ctx);
+  } finally {
+    await ctx.close();
+  }
+}
+
 /** 컨텍스트를 쓰고 반드시 닫는다. */
 export async function withContext<T>(
   opts: SessionOptions,

@@ -163,9 +163,21 @@ async function capture(target: Target): Promise<boolean> {
   console.log('─'.repeat(60));
 
   // headless 로 띄우면 사람이 로그인할 수가 없다. 이 스크립트는 항상 창을 띄운다.
-  const browser = await chromium.launch({ headless: false, args: ['--no-sandbox'] });
-  const context = await browser.newContext({ locale: 'ko-KR', timezoneId: 'Asia/Seoul' });
-  const page = await context.newPage();
+  //
+  // 프로필 폴더를 쓰는 이유: 쿠키(storageState)만 저장해서는 샤오홍슈 로그인이
+  // 넘어가지 않는다. 실측에서 쿠키 31개를 복원했는데도 검색이 로그인 벽으로 떴다.
+  // 프로필째로 두면 localStorage·IndexedDB 까지 남아 수확이 그대로 이어받는다.
+  const profileDir = join(OUT_DIR, `${target.key}-profile`);
+  await mkdir(profileDir, { recursive: true });
+
+  const context = await chromium.launchPersistentContext(profileDir, {
+    headless: false,
+    args: ['--no-sandbox'],
+    viewport: { width: 1440, height: 900 },
+    locale: 'ko-KR',
+    timezoneId: 'Asia/Seoul',
+  });
+  const page = context.pages()[0] ?? (await context.newPage());
 
   await page.goto(target.loginUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
 
@@ -182,19 +194,22 @@ async function capture(target: Target): Promise<boolean> {
     console.log(`     ${target.verifyUrl} 에서 로그인 상태가 보이지 않습니다.`);
     console.log(`     다시 시도하거나, 이미 로그인돼 있는데 확인만 실패한 것이라면`);
     console.log(`     capture-session.ts 의 loggedInSelector 를 조정하세요.`);
-    await browser.close();
+    await context.close();
     return false;
   }
 
+  // 프로필은 이미 디스크에 있다. storageState 는 브라우저가 없는 곳(Actions)용으로
+  // 같이 떠둔다 — 다만 샤오홍슈처럼 쿠키만으로는 안 되는 곳이 있다는 걸 알고 쓴다.
   const state = await context.storageState();
-  await mkdir(OUT_DIR, { recursive: true });
   const outPath = join(OUT_DIR, `${target.key}.json`);
   await writeFile(outPath, JSON.stringify(state));
 
   const cookieCount = state.cookies.length;
-  await browser.close();
+  await context.close();
 
-  console.log(`\n  ✓ 저장했습니다 (쿠키 ${cookieCount}개) → ${outPath}`);
+  console.log(`\n  ✓ 저장했습니다`);
+  console.log(`     프로필: ${profileDir}/   ← 이 컴퓨터에서 쓰는 것`);
+  console.log(`     쿠키 ${cookieCount}개: ${outPath}`);
   // 이 컴퓨터에서는 코드가 이 파일을 직접 읽는다. 복사 단계를 만들지 않는다.
   console.log(`\n  이 컴퓨터에서는 바로 쓸 수 있습니다. 옮길 필요 없습니다.`);
   console.log(`\n  다음 단계:  npm run links harvest ${target.key === 'ali' ? 'ali' : target.key} <검색어>`);

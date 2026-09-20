@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
-import { withContext, pause, SessionExpiredError } from '../browser.js';
+import { existsSync } from 'node:fs';
+import { withContext, withPersistentContext, pause, SessionExpiredError } from '../browser.js';
 import { optionalEnv } from '../../config.js';
 import { db, must } from '../supabase.js';
 import type { LinkPlatform } from './linkstore.js';
@@ -47,7 +48,7 @@ export interface HarvestResult {
 
 interface SiteSpec {
   storageEnv: string;
-  /** npm run capture 가 세션을 떨구는 파일 이름 (.sessions/<key>.json) */
+  /** npm run capture 가 세션을 떨구는 이름 (.sessions/<key>.json, .sessions/<key>-profile/) */
   sessionKey: string;
   label: string;
   searchUrl: (keyword: string) => string;
@@ -125,25 +126,46 @@ export async function harvest(
   keyword: string,
 ): Promise<HarvestResult> {
   const site = SITES[platform];
-  const storageState = await loadSession(site);
+  const profileDir = `.sessions/${site.sessionKey}-profile`;
+  const hasProfile = existsSync(profileDir);
 
-  const links = await withContext(
-    { storageState, locale: site.locale, timezone: site.timezone },
-    async (ctx) => {
-      const page = await ctx.newPage();
+  // 프로필이 있으면 그쪽이 우선이다. 쿠키만으로는 샤오홍슈 로그인이 넘어가지 않는다
+  // (쿠키 31개를 복원했는데도 검색이 로그인 벽으로 떴다). 프로필은 localStorage 까지
+  // 통째로 들고 간다.
+  const run = hasProfile
+    ? <T,>(fn: Parameters<typeof withContext<T>>[1]) =>
+        withPersistentContext(profileDir, { locale: site.locale, timezone: site.timezone }, fn)
+    : async <T,>(fn: Parameters<typeof withContext<T>>[1]) => {
+        const storageState = await loadSession(site);
+        return withContext({ storageState, locale: site.locale, timezone: site.timezone }, fn);
+      };
+
+  console.log(
+    hasProfile
+      ? `${site.label} 프로필을 ${profileDir} 에서 씁니다.`
+      : `${site.label} — 프로필이 없어 쿠키만 복원합니다. 로그인 벽이 뜨면 npm run capture ${site.sessionKey} 로 다시 받으세요.`,
+  );
+
+  const links = await run(async (ctx) => {
+      const page = ctx.pages()[0] ?? (await ctx.newPage());
       await page.goto(site.searchUrl(keyword), {
         waitUntil: 'domcontentloaded',
         timeout: 45_000,
       });
       await pause(3_000, 5_000);
 
-      const body = (await page.content()).slice(0, 200_000);
-      if (site.blockedText.some((t) => body.includes(t))) {
-        await page.close();
+      // 앞 200KB 만 잘라서 보고 있었다. 로그인 벽 문구가 그 뒤에 있으면 못 잡고,
+      // 그러면 "검색 결과가 비었다" 로 오진한다. 실제로 그렇게 틀렸다.
+      // 본문 전체를 보고, 눈에 보이는 텍스트로도 한 번 더 확인한다.
+      const body = await page.content();
+      const visible = await page.locator('body').innerText().catch(() => '');
+      const hit = site.blockedText.find((t) => body.includes(t) || visible.includes(t));
+      if (hit) {
         throw new SessionExpiredError(
           site.label,
-          `로그인 벽이 떴습니다 — 세션이 만료됐거나 자동화가 감지된 것입니다. ` +
-            `세션을 다시 뜨고(npm run capture), 그래도 막히면 harvest/*.js 콘솔 방식으로 우회하세요.`,
+          `검색 페이지가 로그인 벽으로 떴습니다 ("${hit}"). ` +
+            `npm run capture ${site.sessionKey} 로 다시 로그인하세요. ` +
+            `그래도 막히면 harvest/*.js 콘솔 방식으로 우회할 수 있습니다.`,
         );
       }
 
@@ -175,16 +197,19 @@ export async function harvest(
         await scrape();
       }
 
-      await page.close();
       return [...collected].map(([url, title]) => ({ url, title }));
-    },
-  );
+  });
 
   if (links.length === 0) {
+    // "로그인 벽은 아니었으므로" 라고 단정하던 문구를 뺐다. 실제로는 로그인 벽이었는데
+    // 판정이 못 잡아서 엉뚱한 곳을 보게 만들었다. 아는 것만 말한다.
     throw new Error(
-      `${site.label} / "${keyword}" 에서 링크를 한 건도 못 긁었습니다. ` +
-        `로그인 벽은 아니었으므로 검색 결과가 비었거나 페이지 구조가 바뀐 쪽입니다. ` +
-        `HEADFUL=true 로 띄워 눈으로 확인하세요.`,
+      `${site.label} / "${keyword}" 에서 링크를 한 건도 못 긁었습니다.\n` +
+        `   알려진 문구의 로그인 벽은 아니었습니다. 가능한 원인:\n` +
+        `   · 로그인 벽인데 문구가 바뀌어 판정이 못 잡음 (제일 흔함)\n` +
+        `   · 검색 결과가 실제로 없음 (검색어를 바꿔보세요)\n` +
+        `   · 페이지 구조가 바뀜\n` +
+        `   HEADFUL=true npm run links harvest ${site.sessionKey} ${keyword} 로 띄워 눈으로 보세요.`,
     );
   }
 
