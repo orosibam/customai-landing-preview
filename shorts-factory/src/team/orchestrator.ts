@@ -6,7 +6,7 @@ import { mkdir } from 'node:fs/promises';
 import { downloadFile } from '../lib/storage.js';
 import { db, logStage, openRun } from '../lib/supabase.js';
 import { PRODUCTION_LINE } from './index.js';
-import { HandoffError, type Brief } from './types.js';
+import { HandoffError, type Brief, type TeamMember } from './types.js';
 
 /**
  * 작업 배분과 진행 관리.
@@ -51,10 +51,10 @@ function buildSlots(runId: string): Brief[] {
 const MAX_CANDIDATE_TRIES = 3;
 
 /** 한 후보로 라인 끝까지 가본다. 담당자마다 작업 → 자기검수 순으로 돈다. */
-async function runPass(brief: Brief, slotLabel: string): Promise<Brief> {
+async function runPass(brief: Brief, slotLabel: string, line: TeamMember[]): Promise<Brief> {
   let current = brief;
 
-  for (const member of PRODUCTION_LINE) {
+  for (const member of line) {
     const startedAt = Date.now();
     try {
       current = await member.work(current);
@@ -113,12 +113,19 @@ class CandidateRejected extends Error {
  *
  * 쓰지 않는 플래그는 "재시도한다" 는 거짓말이므로, 읽거나 없애야 했다. 읽기로 했다.
  */
-async function runLine(brief: Brief, slotLabel: string): Promise<Brief> {
+export async function runLine(
+  brief: Brief,
+  slotLabel: string,
+  // 테스트가 가짜 라인을 넣을 수 있게 열어뒀다. 후보 재시도는 "아래에서 퇴짜가
+  // 났을 때만" 도는 경로라, 실제 실행에서는 몇 번에 한 번씩만 지나간다.
+  // 그런 길일수록 틀린 채로 오래 남으므로 테스트로 눌러둔다.
+  line: TeamMember[] = PRODUCTION_LINE,
+): Promise<Brief> {
   let current = brief;
 
   for (let attempt = 1; attempt <= MAX_CANDIDATE_TRIES; attempt++) {
     try {
-      return await runPass(current, slotLabel);
+      return await runPass(current, slotLabel, line);
     } catch (e) {
       if (!(e instanceof CandidateRejected)) throw e;
 

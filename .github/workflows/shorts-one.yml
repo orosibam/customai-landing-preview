@@ -63,6 +63,14 @@ jobs:
         working-directory: shorts-factory
         run: npx tsx src/lib/korean.test.ts
 
+      # 후보 재시도. 아래에서 퇴짜가 났을 때만 도는 경로라 실제 실행에서는 몇 번에
+      # 한 번씩만 지나간다 — 그런 길일수록 틀린 채로 오래 남는다. 실제로 retryable
+      # 플래그는 처음부터 있었는데 읽는 코드 없이 여섯 번을 돌았다.
+      # 가짜 담당자를 넣어 돌리므로 네트워크도 LLM 도 안 탄다.
+      - name: 후보 재시도 테스트
+        working-directory: shorts-factory
+        run: npx tsx src/team/orchestrator.test.ts
+
       # evaluate 안에 함수를 선언하면 브라우저에 __name 이 없어 터진다(tsx/esbuild).
       # 이것 때문에 인스타 릴스 읽기가 전부 실패해 발굴이 0건이 됐던 적이 있다.
       # 네트워크를 안 쓰고 몇 초면 끝나므로 LLM 비용을 쓰기 전에 여기서 확인한다.
