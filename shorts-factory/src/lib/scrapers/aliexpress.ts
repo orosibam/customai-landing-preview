@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { withContext, pause } from '../browser.js';
-import { MIN_SOURCE_COUNT, TARGET_SOURCE_COUNT } from '../../config.js';
+import { FOOTAGE_POOL_SIZE, MIN_SOURCE_COUNT } from '../../config.js';
 
 /**
  * 알리익스프레스 상품 영상 수집 — 소재 공급처.
@@ -74,13 +74,20 @@ export class AliBlockedError extends Error {
 }
 
 /**
- * 검색어로 상품 영상을 모은다.
+ * 검색어로 **같은 제품의 영상을 여러 개** 모은다.
  *
- * 원본 방법론은 소스 "네 개에서 다섯 개" 를 권한다. 실측상 상품 5건에 영상 3건이라
- * 목표 개수의 두 배쯤 훑어야 채워진다.
+ * 완성 영상에 쓰는 건 5개쯤이지만, 여기서는 그보다 훨씬 많이 받는다. 편집자가
+ * 설계도의 컷마다 "그 동작이 실제로 찍힌 소재" 를 골라야 하는데, 후보가 쓸 개수와
+ * 같으면 고르는 게 아니라 채우는 게 되기 때문이다.
+ *
+ * 두 방향으로 늘린다:
+ *   · 판매자를 여러 명 본다 — 같은 제품이라도 찍은 각도와 동작이 다르다
+ *   · 한 상품 페이지의 mp4 를 전부 받는다 — 실측에서 페이지당 2개씩 있었다
+ *
+ * 예전엔 페이지당 첫 번째 하나만 받고 나머지를 버렸다. 절반을 버리고 있었던 셈이다.
  */
 export async function collectClips(query: AliQuery): Promise<AliClip[]> {
-  const limit = query.limit ?? TARGET_SOURCE_COUNT;
+  const limit = query.limit ?? FOOTAGE_POOL_SIZE;
 
   return withContext({ locale: 'en-US', timezone: 'America/Los_Angeles' }, async (ctx) => {
     const page = await ctx.newPage();
@@ -114,8 +121,12 @@ export async function collectClips(query: AliQuery): Promise<AliClip[]> {
 
     const clips: AliClip[] = [];
     const noVideo: string[] = [];
+    // 판매자가 달라도 같은 소재 영상을 쓰는 경우가 있다. 같은 파일을 두 번 받으면
+    // 편집자에게는 선택지가 늘어난 것처럼 보이는데 실제로는 같은 화면이다.
+    const seenVideos = new Set<string>();
+    let sellersWithVideo = 0;
 
-    // 영상 보유율이 60% 남짓이라(실측) 목표의 세 배까지 훑는다.
+    // 영상 보유율이 60% 남짓이라(실측) 넉넉히 훑는다.
     for (const url of items.slice(0, limit * 3)) {
       if (clips.length >= limit) break;
 
@@ -138,13 +149,19 @@ export async function collectClips(query: AliQuery): Promise<AliClip[]> {
         const title =
           (await page.title().catch(() => '')).replace(/\s*[-|]\s*AliExpress.*$/i, '').trim() ||
           '(제목 없음)';
+        const productId = url.match(ITEM_RE)?.[1] ?? '';
 
-        clips.push({
-          videoUrl: found[0]!,
-          productUrl: url,
-          productId: url.match(ITEM_RE)?.[1] ?? '',
-          title: title.slice(0, 120),
-        });
+        // 페이지의 mp4 를 전부 받는다. 예전엔 첫 번째 하나만 쓰고 나머지를 버렸는데,
+        // 실측에서 페이지당 2개씩 있었으므로 절반을 버리고 있었던 셈이다.
+        let addedHere = 0;
+        for (const videoUrl of found) {
+          if (clips.length >= limit) break;
+          if (seenVideos.has(videoUrl)) continue;
+          seenVideos.add(videoUrl);
+          clips.push({ videoUrl, productUrl: url, productId, title: title.slice(0, 120) });
+          addedHere++;
+        }
+        if (addedHere > 0) sellersWithVideo++;
       } catch (e) {
         if (e instanceof AliBlockedError) throw e;
         // 상품 한 건이 안 열리는 건 흔하다. 다만 세지 않고 넘기지는 않는다.
@@ -153,17 +170,24 @@ export async function collectClips(query: AliQuery): Promise<AliClip[]> {
       }
     }
 
-    if (clips.length < MIN_SOURCE_COUNT) {
+    // 판매자 수로 센다. 같은 페이지에서 뽑은 두 개는 같은 촬영본이라 화면이 비슷하고,
+    // 그걸 서로 다른 소스로 세면 "다양한 소재를 확보했다" 는 판정이 거짓이 된다.
+    if (sellersWithVideo < MIN_SOURCE_COUNT) {
       throw new Error(
         `소재 부족: "${query.keyword}" 로 상품 ${items.length}건 중 ` +
-          `${Math.min(items.length, limit * 3)}건을 훑어 영상 ${clips.length}개만 찾았습니다 ` +
-          `(최소 ${MIN_SOURCE_COUNT}개 필요).\n` +
-          `   소스가 적으면 소스당 사용 길이가 길어져 5초 상한에 걸리고 화면이 반복됩니다.\n` +
+          `${Math.min(items.length, limit * 3)}건을 훑어 ` +
+          `판매자 ${sellersWithVideo}곳에서 영상 ${clips.length}개를 찾았습니다 ` +
+          `(서로 다른 판매자 최소 ${MIN_SOURCE_COUNT}곳 필요).\n` +
+          `   같은 판매자 영상만 모으면 각도와 동작이 겹쳐 짜깁기할 게 없습니다.\n` +
           `   검색어를 넓히거나(브랜드명 빼기, 범주어 쓰기) 다른 제품으로 교체하세요.` +
           (noVideo.length > 0 ? `\n   영상 없던 상품 ${noVideo.length}건.` : ''),
       );
     }
 
+    console.log(
+      `알리 "${query.keyword}": 판매자 ${sellersWithVideo}곳에서 영상 ${clips.length}개 확보 ` +
+        `(편집자가 여기서 컷마다 골라 씁니다)`,
+    );
     return clips;
   });
 }

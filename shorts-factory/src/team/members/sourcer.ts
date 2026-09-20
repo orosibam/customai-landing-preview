@@ -1,7 +1,7 @@
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MAX_CLIP_SEC, MIN_SOURCE_COUNT, storagePath } from '../../config.js';
+import { FOOTAGE_POOL_SIZE, MAX_CLIP_SEC, MIN_SOURCE_COUNT, storagePath } from '../../config.js';
 import { downloadTikTokVideo, findOverseasFootage } from '../../lib/scrapers/tiktok-discovery.js';
 import { collectClips, downloadClip } from '../../lib/scrapers/aliexpress.js';
 import { probe } from '../../lib/ffmpeg.js';
@@ -64,7 +64,10 @@ export const sourcer: TeamMember = {
       try {
         const clips = await collectClips({ keyword: aliKeyword });
         for (const [i, clip] of clips.entries()) {
-          if (localPaths.length >= MIN_SOURCE_COUNT + 1) break;
+          // 여기서 MIN_SOURCE_COUNT+1 에 멈추고 있었다. 그러면 편집자가 컷마다
+          // 고를 후보가 쓸 개수와 같아져, 고르는 게 아니라 채우는 게 된다.
+          // 풀을 채워서 넘긴다.
+          if (localPaths.length >= FOOTAGE_POOL_SIZE) break;
           const path = join(dir, `ali-${i}.mp4`);
           try {
             await downloadClip(clip.videoUrl, path);
@@ -93,7 +96,7 @@ export const sourcer: TeamMember = {
         triedKeywords.push(...zhTried);
 
         for (const [i, video] of videos.entries()) {
-          if (localPaths.length >= MIN_SOURCE_COUNT + 1) break;
+          if (localPaths.length >= FOOTAGE_POOL_SIZE) break;
           const path = join(dir, `tt-${i}.mp4`);
           try {
             await downloadTikTokVideo(video.url, path);

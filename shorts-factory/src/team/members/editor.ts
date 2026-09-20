@@ -60,16 +60,22 @@ export const editor: TeamMember = {
     // 소재에 무엇이 찍혔는지 모르면 배정이 사실상 무작위가 된다.
     // 설계도가 "지퍼를 끝까지 당겨 연다" 라고 적어줘도, 길이만 보고 고르면
     // 전혀 다른 장면이 그 자리에 들어간다. 그래서 프레임을 뽑아 눈으로 본다.
+    // 소재가 많을수록 소재당 프레임을 줄인다. 소재 풀을 12개로 늘렸는데 그대로
+    // 3장씩 뽑으면 36장이 되어 비용이 뛴다. 총량을 30장 안쪽으로 맞추되,
+    // 소재당 최소 2장은 보장한다 — 1장만 보면 그게 정지 화면인지 동작 중인지 모른다.
+    const FRAME_BUDGET = 30;
+    const framesPerAsset = Math.max(2, Math.min(3, Math.floor(FRAME_BUDGET / Math.max(assetInfos.length, 1))));
+
     const assetViews = await Promise.all(
       assetInfos.map(async (a) => {
         const dir = await mkdtemp(join(tmpdir(), `frames-${a.index}-`));
-        await extractFrames(a.localPath, join(dir, 'f-%02d.jpg'), 3).catch(() => {});
+        await extractFrames(a.localPath, join(dir, 'f-%02d.jpg'), framesPerAsset).catch(() => {});
         const files = await readdir(dir).catch(() => [] as string[]);
         const images = await Promise.all(
           files
             .filter((f) => f.endsWith('.jpg'))
             .sort()
-            .slice(0, 3)
+            .slice(0, framesPerAsset)
             .map(async (f) => ({
               mediaType: 'image/jpeg' as const,
               base64: (await readFile(join(dir, f))).toString('base64'),
@@ -115,7 +121,9 @@ ${JSON.stringify(assetInfos.map((a) => ({ asset_index: a.index, duration_sec: Nu
 - 모든 컷에 소재를 하나씩 배정한다.
 - **action 이 맞는 것을 우선한다.** 맞는 소재가 없으면 가장 비슷한 것을 고르고
   그 컷의 matched 를 false 로 표시해라.
-- 연속된 두 컷에 같은 소재를 쓰지 않는다. 화면이 안 바뀐 것처럼 보인다.
+- **같은 소재를 두 컷에 쓰지 않는다.** 소재는 컷 수보다 넉넉히 있으니 전부 다른 걸
+  골라라. 화면이 안 바뀐 것처럼 보이는 문제도 있지만, 한 소스에서 ${MAX_CLIP_SEC}초를
+  넘게 쓰게 되는 게 더 큰 문제다.
 - start_sec 은 그 소재에서 그 동작이 실제로 보이는 지점으로 잡는다.
   (소재 길이 - ${MAX_CLIP_SEC}) 이하여야 한다.
 - 맨 앞 0.5초는 피한다. 보통 페이드인이라 흐리다.
@@ -128,14 +136,34 @@ ${JSON.stringify(assetInfos.map((a) => ({ asset_index: a.index, duration_sec: Nu
 
     // 컷을 잘라 정규화한다.
     const clipPaths: string[] = [];
-    let previousAsset = -1;
+
+    // 한 소재를 두 컷에 쓰면 그 소스에서 나가는 총 길이가 MAX_CLIP_SEC 을 넘는다.
+    // 상한의 근거가 "각 영상에서 3~5초만" 이므로, 컷당 5초를 지켜도 같은 소스를
+    // 두 번 쓰면 근거가 무너진다. 소재 풀이 5개뿐일 땐 재사용이 불가피했는데
+    // 이제 FOOTAGE_POOL_SIZE 만큼 확보하므로 안 그래도 된다.
+    const usedAssets = new Set<number>();
+
+    /** 이미 쓴 소재면 아직 안 쓴 것 중 가장 가까운 번호로 옮긴다. */
+    const pickUnused = (wanted: number): number => {
+      if (!usedAssets.has(wanted)) return wanted;
+      for (let step = 1; step < assetInfos.length; step++) {
+        for (const cand of [wanted + step, wanted - step]) {
+          const idx = ((cand % assetInfos.length) + assetInfos.length) % assetInfos.length;
+          if (!usedAssets.has(idx)) return idx;
+        }
+      }
+      // 컷이 소재보다 많으면 재사용 말고는 길이 없다. 그 사실을 숨기지 않는다.
+      console.warn(
+        `소재 ${assetInfos.length}개로 컷 ${blueprint.cuts.length}개를 채우느라 소재를 재사용합니다. ` +
+          `같은 소스에서 ${MAX_CLIP_SEC}초를 넘게 쓰게 되므로 소재를 더 확보하는 게 맞습니다.`,
+      );
+      return wanted;
+    };
 
     for (const [cutIndex, cut] of blueprint.cuts.entries()) {
       const match = parsed.assignments.find((a) => a.cut_index === cutIndex);
-      let assetIndex = match?.asset_index ?? cutIndex % assetInfos.length;
-      // 연속 중복은 코드에서도 한 번 더 막는다.
-      if (assetIndex === previousAsset) assetIndex = (assetIndex + 1) % assetInfos.length;
-      previousAsset = assetIndex;
+      const assetIndex = pickUnused(match?.asset_index ?? cutIndex % assetInfos.length);
+      usedAssets.add(assetIndex);
 
       const asset = assetInfos[assetIndex] ?? assetInfos[0]!;
       const local = await ensureLocal(asset, dir, footage.assetIds[assetIndex]);
