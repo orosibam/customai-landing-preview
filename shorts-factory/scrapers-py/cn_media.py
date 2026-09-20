@@ -101,15 +101,32 @@ def polite_sleep() -> None:
     time.sleep(random.uniform(1.2, 2.8))
 
 
-def get_html(session: Any, url: str, referer: str | None = None) -> str:
+def get_html(session: Any, url: str, referer: str | None = None, attempts: int = 3) -> str:
+    """
+    1688 은 연속 요청을 맞으면 HTTP 200 으로 1KB 대 조각을 돌려준다. 영구 차단이 아니라
+    일시적 스로틀이라 잠깐 쉬면 같은 URL 이 25KB 를 준다 — 실측에서 1135바이트가
+    나오던 진입로가 다음 실행에서 정상 응답했다.
+    그래서 조각은 실패로 보되 바로 포기하지 않고 간격을 벌려 다시 친다.
+    끝까지 조각이면 그때는 던진다 (빈 결과로 넘어가지 않는다).
+    """
     headers = {"Referer": referer} if referer else {}
-    res = session.get(url, headers=headers, timeout=30)
-    if res.status_code != 200:
-        raise Blocked(f"HTTP {res.status_code} — {url}")
-    text = res.text
-    if len(text) < 2_000:
-        raise Blocked(f"응답이 {len(text)}바이트뿐입니다 (차단 페이지로 보입니다) — {url}")
-    return text
+    last = ""
+
+    for attempt in range(attempts):
+        if attempt > 0:
+            time.sleep(2 ** attempt + random.uniform(0, 1.5))
+        res = session.get(url, headers=headers, timeout=30)
+        if res.status_code != 200:
+            raise Blocked(f"HTTP {res.status_code} — {url}")
+        text = res.text
+        if len(text) >= 2_000:
+            return text
+        last = text
+
+    raise Blocked(
+        f"{attempts}번 시도했지만 응답이 {len(last)}바이트뿐입니다 "
+        f"(스로틀 조각으로 보입니다) — {url}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +424,7 @@ def ali_probe(keyword: str) -> dict[str, Any]:
                     "status": res.status_code,
                     "bytes": len(res.text),
                     "looksBlocked": len(res.text) < 5_000,
+                    "shape": _shape(res.text),
                 }
             )
         except Exception as e:  # noqa: BLE001
@@ -418,6 +436,27 @@ def ali_probe(keyword: str) -> dict[str, Any]:
         results["search"].append(row)
 
     return results
+
+
+# 페이지의 "모양" 만 세는 표식들. 내용은 찍지 않고 등장 횟수만 낸다 —
+# 어떤 추출 패턴을 써야 하는지, 혹은 애초에 검증/로그인 페이지인지를
+# 페이지를 들여다보지 않고 판별하기 위한 계측용이다.
+_SHAPE_MARKERS: dict[str, str] = {
+    "detailLink": r"detail\.1688\.com/offer/\d+",
+    "offerIdKey": r'"offerId"',
+    "offerIdAttr": r"data-offer-id",
+    "offerIdSnake": r'"offer_id"',
+    # 아래가 잡히면 25KB 가 상품 목록이 아니라 검증/로그인 벽이라는 뜻이다.
+    "captcha": r"captcha|punish|nc_1_n1z|滑动验证",
+    "loginWall": r"请登录|登录后|login\.1688",
+}
+
+
+def _shape(html: str) -> dict[str, int]:
+    return {
+        name: len(re.findall(pattern, html, re.IGNORECASE))
+        for name, pattern in _SHAPE_MARKERS.items()
+    }
 
 
 def _ali_search_probe(keyword: str) -> list[dict[str, Any]]:
@@ -442,6 +481,7 @@ def _ali_search_probe(keyword: str) -> list[dict[str, Any]]:
                     # 차단 페이지는 짧고 상품 링크가 없다. 둘을 같이 봐야 구분된다.
                     "looksBlocked": len(html) < 5_000 and not ids,
                     "sampleId": ids[0] if ids else None,
+                    "shape": _shape(html),
                 }
             )
             if ids:
